@@ -1,0 +1,297 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme CSS custom properties ── */
+:root,
+[data-theme="light"] {
+    --color-surface: #F5F5F3;
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #F9FAFB;
+    --color-bg-hover: #F3F4F6;
+    --color-text-primary: #111827;
+    --color-text-secondary: #6B7280;
+    --color-text-muted: #9CA3AF;
+    --color-border: #E5E7EB;
+    --color-border-light: #F3F4F6;
+    --color-card-bg: #FFFFFF;
+    --color-card-border: #F3F4F6;
+    --color-input-bg: #FFFFFF;
+    --color-input-border: #E5E7EB;
+    --color-sidebar-bg: #FFFFFF;
+    --color-header-bg: rgba(255, 255, 255, 0.8);
+    --color-skeleton: #E5E7EB;
+    --color-badge-bg: #F3F4F6;
+    --color-tooltip-bg: #111827;
+    --color-tooltip-text: #FFFFFF;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+    --shadow-elevated: 0 2px 6px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.04);
+    /* Gray scale */
+    --color-gray-50: #F9FAFB;
+    --color-gray-100: #F3F4F6;
+    --color-gray-200: #E5E7EB;
+    --color-gray-300: #D1D5DB;
+    --color-gray-400: #9CA3AF;
+    --color-gray-500: #6B7280;
+    --color-gray-600: #4B5563;
+    --color-gray-700: #374151;
+    --color-gray-800: #1F2937;
+    --color-gray-900: #111827;
+}
+
+[data-theme="dark"] {
+    --color-surface: #0f1117;
+    --color-bg-primary: #1a1b23;
+    --color-bg-secondary: #22232d;
+    --color-bg-hover: #2a2b37;
+    --color-text-primary: #F3F4F6;
+    --color-text-secondary: #9CA3AF;
+    --color-text-muted: #6B7280;
+    --color-border: #2d2e3a;
+    --color-border-light: #22232d;
+    --color-card-bg: #1a1b23;
+    --color-card-border: #2d2e3a;
+    --color-input-bg: #22232d;
+    --color-input-border: #2d2e3a;
+    --color-sidebar-bg: #14151d;
+    --color-header-bg: rgba(26, 27, 35, 0.85);
+    --color-skeleton: #2d2e3a;
+    --color-badge-bg: #22232d;
+    --color-tooltip-bg: #F3F4F6;
+    --color-tooltip-text: #111827;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.15);
+    --shadow-elevated: 0 2px 6px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.2);
+    color-scheme: dark;
+    /* Gray scale (inverted for dark) */
+    --color-gray-50: #14151d;
+    --color-gray-100: #1a1b23;
+    --color-gray-200: #22232d;
+    --color-gray-300: #2d2e3a;
+    --color-gray-400: #6B7280;
+    --color-gray-500: #9CA3AF;
+    --color-gray-600: #B0B7C3;
+    --color-gray-700: #CED4DA;
+    --color-gray-800: #E5E7EB;
+    --color-gray-900: #F3F4F6;
+}
+
+[data-theme="warm"] {
+    --color-surface: #FFF8F0;
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #FFF5EC;
+    --color-bg-hover: #FFEDE0;
+    --color-text-primary: #3D2B1F;
+    --color-text-secondary: #7A6455;
+    --color-text-muted: #A08878;
+    --color-border: #F0DDD0;
+    --color-border-light: #FFF5EC;
+    --color-card-bg: #FFFFFF;
+    --color-card-border: #F0DDD0;
+    --color-input-bg: #FFFFFF;
+    --color-input-border: #F0DDD0;
+    --color-sidebar-bg: #FFF8F0;
+    --color-header-bg: rgba(255, 248, 240, 0.85);
+    --color-skeleton: #F0DDD0;
+    --color-badge-bg: #FFF5EC;
+    --color-tooltip-bg: #3D2B1F;
+    --color-tooltip-text: #FFFFFF;
+    --shadow-card: 0 1px 3px rgba(139,69,19,0.04), 0 4px 12px rgba(139,69,19,0.03);
+    --shadow-elevated: 0 2px 6px rgba(139,69,19,0.05), 0 8px 24px rgba(139,69,19,0.04);
+    /* Gray scale (warm) */
+    --color-gray-50: #FFF5EC;
+    --color-gray-100: #FFEDE0;
+    --color-gray-200: #F0DDD0;
+    --color-gray-300: #E0C8B8;
+    --color-gray-400: #A08878;
+    --color-gray-500: #7A6455;
+    --color-gray-600: #625048;
+    --color-gray-700: #4A3A33;
+    --color-gray-800: #322820;
+    --color-gray-900: #1A1510;
+}
+
+[data-theme="cool"] {
+    --color-surface: #EEF2F7;
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #F0F4F8;
+    --color-bg-hover: #E2EAF2;
+    --color-text-primary: #1A2737;
+    --color-text-secondary: #506070;
+    --color-text-muted: #8095A8;
+    --color-border: #D0DCE8;
+    --color-border-light: #E8EEF4;
+    --color-card-bg: #FFFFFF;
+    --color-card-border: #D0DCE8;
+    --color-input-bg: #FFFFFF;
+    --color-input-border: #D0DCE8;
+    --color-sidebar-bg: #F0F4F8;
+    --color-header-bg: rgba(240, 244, 248, 0.85);
+    --color-skeleton: #D0DCE8;
+    --color-badge-bg: #E8EEF4;
+    --color-tooltip-bg: #1A2737;
+    --color-tooltip-text: #FFFFFF;
+    --shadow-card: 0 1px 3px rgba(0,30,60,0.04), 0 4px 12px rgba(0,30,60,0.03);
+    --shadow-elevated: 0 2px 6px rgba(0,30,60,0.05), 0 8px 24px rgba(0,30,60,0.04);
+    /* Gray scale (cool) */
+    --color-gray-50: #F0F4F8;
+    --color-gray-100: #E8EEF4;
+    --color-gray-200: #D0DCE8;
+    --color-gray-300: #B0C4D4;
+    --color-gray-400: #8095A8;
+    --color-gray-500: #506070;
+    --color-gray-600: #405060;
+    --color-gray-700: #304050;
+    --color-gray-800: #203040;
+    --color-gray-900: #101820;
+}
+
+@layer base {
+    * {
+        border-color: var(--color-border);
+    }
+
+    body {
+        background-color: var(--color-surface);
+        color: var(--color-text-primary);
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    :focus-visible {
+        @apply outline-2 outline-offset-2 outline-primary-500;
+    }
+}
+
+@layer components {
+    .page-container {
+        @apply mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8;
+    }
+
+    .page-header {
+        @apply mb-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between;
+    }
+
+    .card {
+        @apply rounded-lg border border-gray-100 p-6 shadow-card transition-shadow duration-200;
+        background-color: var(--color-card-bg);
+    }
+
+    .card:hover {
+        @apply shadow-elevated;
+    }
+
+    .card-interactive {
+        @apply cursor-pointer hover:shadow-elevated hover:-translate-y-0.5 transition-all duration-200;
+    }
+
+    .btn {
+        @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2;
+    }
+
+    .btn-primary {
+        @apply bg-primary-500 text-white hover:bg-primary-600 active:bg-primary-700;
+    }
+
+    .btn-secondary {
+        @apply bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300;
+    }
+
+    .btn-outline {
+        @apply border border-gray-200 text-gray-700 hover:bg-gray-50 active:bg-gray-100;
+        background-color: var(--color-card-bg);
+    }
+
+    .btn-accent {
+        @apply bg-accent-500 text-white hover:bg-accent-600 active:bg-accent-700;
+    }
+
+    .btn-danger {
+        @apply bg-red-500 text-white hover:bg-red-600 active:bg-red-700;
+    }
+
+    .btn-ghost {
+        @apply text-gray-600 hover:bg-gray-100 active:bg-gray-200;
+    }
+
+    .input {
+        @apply w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm min-h-[44px] transition-all duration-200 placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 focus:outline-none;
+        background-color: var(--color-input-bg);
+    }
+
+    .label {
+        @apply block text-sm font-medium text-gray-700 mb-1.5;
+    }
+
+    .badge {
+        @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+    }
+
+    .badge-success {
+        @apply bg-green-50 text-green-700;
+    }
+
+    .badge-warning {
+        @apply bg-amber-50 text-amber-700;
+    }
+
+    .badge-danger {
+        @apply bg-red-50 text-red-700;
+    }
+
+    .badge-info {
+        @apply bg-blue-50 text-blue-700;
+    }
+
+    .badge-neutral {
+        @apply bg-gray-50 text-gray-600;
+    }
+
+    .badge-primary {
+        @apply bg-primary-50 text-primary-700;
+    }
+
+    .skeleton {
+        @apply animate-pulse rounded-md bg-gray-200;
+    }
+
+    .tooltip {
+        @apply absolute z-50 rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white shadow-lg;
+    }
+
+    .divider {
+        @apply border-t border-gray-100 my-4;
+    }
+}
+
+@layer utilities {
+    .scrollbar-thin {
+        scrollbar-width: thin;
+        scrollbar-color: #d1d5db transparent;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+        background-color: #d1d5db;
+        border-radius: 3px;
+    }
+
+    @keyframes scan {
+        0%,
+        100% {
+            top: 10%;
+        }
+        50% {
+            top: 85%;
+        }
+    }
+
+    .animate-scan {
+        animation: scan 2s ease-in-out infinite;
+    }
+}

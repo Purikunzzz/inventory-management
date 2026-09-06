@@ -1,0 +1,8 @@
+node_modules/
+src/
+public/
+dist/
+.git/
+__pycache__/
+*.pyc
+data/
