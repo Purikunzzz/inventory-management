@@ -49,6 +49,7 @@ core/         → auth, JWT, security helpers
 | `/borrow`, `/return`, `/transactions` | api/borrow.py | `get_current_user` |
 | `/users` | api/users.py | `PATCH /users/me` → `get_current_user`; others → `require_admin` |
 | `/stats/*` | api/stats.py | `get_current_user` |
+| `/reports/{type}` | api/reports.py | `get_current_user` |
 
 REST pattern: `GET /items` (list), `POST /items` (create 201), `GET /items/{id}`, `PATCH /items/{id}`, `DELETE /items/{id}` (soft, 204).
 Pagination: `?skip=0&limit=100`.
@@ -104,6 +105,12 @@ BorrowStatus: borrowed | returned  # app/models/borrow.py
 - `leaderboard(db, limit)` → top users ranked by borrow count with department info
 - `recommendations(db, limit)` → items frequently borrowed together (category-based)
 
+### report_service
+- `build_report(db, user, report_type, fmt, start_date, end_date)` → (filename, media_type, bytes); renders PDF (fpdf2 + Sarabun TTF in `app/assets/fonts/`), Excel (openpyxl), CSV (UTF-8 BOM)
+- Types: `inventory` (item snapshot), `borrowing` (transactions in period), `usage` (top borrowed in period), `maintenance` (low stock + overdue), `damage` (late returns), `financial` (stock per category — no pricing data in DB)
+- Non-admins are scoped to their own records (same rule as `list_transactions`); default period = last 30 days
+- `GET /api/reports/{report_type}?format=pdf|csv|excel&start_date=&end_date=` returns the file with `Content-Disposition: attachment`
+
 ## Schema changes (no Alembic)
 - Add column → update model, restart app (new tables auto-created; existing tables need manual `ALTER TABLE`)
 - Breaking change → `docker compose down -v && docker compose up -d` (destroys data)
@@ -157,6 +164,7 @@ src/
     locationService.js — listLocations(), createLocation(), updateLocation(), deleteLocation()
     statsService.js  — getSummary(), getItemUsage(), getStockMovement(), getLowStock(),
                        getLeaderboard(), getRecommendations()
+    reportService.js — download(reportType, format, {startDate, endDate}) → blob download
     userService.js   — listUsers(), getUser(), updateMe(), createUser(), updateUser(), deleteUser()
   pages/
     Login, Dashboard, Inventory, ItemDetail, BorrowReturn, QrScanner,
@@ -192,6 +200,7 @@ src/
 | `lab_notifications` | User's notification preferences (no backend) |
 | `lab_theme` | Selected theme ID (no backend) |
 | `lab_fontsize` | Selected font size (no backend) |
+| `lab_recent_reports` | Reports generated this browser (last 10, no backend) |
 
 ## Routes
 `/ → Dashboard | /inventory → Inventory | /inventory/:id → ItemDetail | /borrow → BorrowReturn | /qr-scanner | /locations | /analytics | /maintenance | /recommendations | /leaderboard | /reports | /admin (admin only) | /settings`
