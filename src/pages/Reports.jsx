@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   BarChart3,
@@ -10,31 +11,22 @@ import {
   AlertTriangle,
   FileText,
   FileSpreadsheet,
-  Download,
   Calendar,
   Clock,
   TrendingUp,
   TrendingDown,
-  ChevronRight,
   Sparkles,
   Loader2,
-  FileDown,
-  CheckCircle,
-  Filter,
+  Users,
+  Boxes,
   RefreshCw,
 } from "lucide-react";
 import PageTransition from "../components/PageTransition";
 import DatePicker from "../components/DatePicker";
-import {
-  cn,
-  formatDate,
-  formatRelative,
-  formatCurrency,
-  getStatusColor,
-  getConditionColor,
-  truncate,
-} from "../lib/utils";
-import { stats } from "../data/mockData";
+import { cn, formatDate } from "../lib/utils";
+import { useAuth } from "../hooks/useAuth";
+import { statsService } from "../services/statsService";
+import { reportService } from "../services/reportService";
 
 // ---- Constants ----
 const REPORT_CARDS = [
@@ -57,16 +49,14 @@ const REPORT_CARDS = [
     id: "maintenance",
     icon: Wrench,
     title: "Maintenance Report",
-    description:
-      "Equipment maintenance history, costs, and upcoming schedules.",
+    description: "Low-stock equipment and overdue borrows that need attention.",
     color: "bg-amber-50 text-amber-600",
   },
   {
     id: "damage",
     icon: AlertTriangle,
     title: "Damage Report",
-    description:
-      "Damaged items, repair costs, and incident frequency analysis.",
+    description: "Late returns and overdue incidents for the selected period.",
     color: "bg-red-50 text-red-600",
   },
   {
@@ -80,7 +70,7 @@ const REPORT_CARDS = [
     id: "financial",
     icon: DollarSign,
     title: "Financial Summary",
-    description: "Budget allocation, spending breakdown, and cost projections.",
+    description: "Stock composition per category with utilization overview.",
     color: "bg-green-50 text-green-600",
   },
 ];
@@ -106,54 +96,18 @@ const EXPORT_FORMATS = [
   },
 ];
 
-const MOCK_RECENT_REPORTS = [
-  {
-    id: "r1",
-    type: "Inventory Report",
-    format: "PDF",
-    generatedBy: "Dr. Sarah Chen",
-    date: "2026-06-20",
-    size: "2.4 MB",
-  },
-  {
-    id: "r2",
-    type: "Borrowing Report",
-    format: "Excel",
-    generatedBy: "James Rodriguez",
-    date: "2026-06-18",
-    size: "1.8 MB",
-  },
-  {
-    id: "r3",
-    type: "Maintenance Report",
-    format: "PDF",
-    generatedBy: "Dr. Sarah Chen",
-    date: "2026-06-15",
-    size: "3.1 MB",
-  },
-  {
-    id: "r4",
-    type: "Usage Analytics",
-    format: "CSV",
-    generatedBy: "System Auto",
-    date: "2026-06-10",
-    size: "0.9 MB",
-  },
-  {
-    id: "r5",
-    type: "Financial Summary",
-    format: "PDF",
-    generatedBy: "Dr. Sarah Chen",
-    date: "2026-06-05",
-    size: "1.5 MB",
-  },
-];
-
 const FORMAT_ICONS = {
   PDF: { icon: FileText, color: "bg-red-50 text-red-600" },
   Excel: { icon: FileSpreadsheet, color: "bg-green-50 text-green-600" },
   CSV: { icon: FileSpreadsheet, color: "bg-blue-50 text-blue-600" },
 };
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
 
 // ---- Skeleton ----
 function Skeleton({ className }) {
@@ -283,16 +237,13 @@ function RecentReportItem({ report, index }) {
         </span>
         <p className="text-xs text-gray-400 mt-0.5">{report.size}</p>
       </div>
-      <button className="btn btn-ghost p-2 min-h-0 rounded-lg">
-        <Download className="h-4 w-4" />
-      </button>
     </motion.div>
   );
 }
 
 // ---- Main Component ----
 export default function Reports() {
-  const [loading, setLoading] = useState(true);
+  const { currentUser } = useAuth();
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
@@ -303,35 +254,69 @@ export default function Reports() {
   );
   const [generatingId, setGeneratingId] = useState(null);
   const [selectedExportFormat, setSelectedExportFormat] = useState("pdf");
+  const [recentReports, setRecentReports] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("lab_recent_reports")) || [];
+    } catch {
+      return [];
+    }
+  });
 
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(timer);
-  }, []);
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: ["stats-summary"],
+    queryFn: () => statsService.getSummary(),
+  });
 
   const computedStats = useMemo(
     () => ({
-      totalItems: stats?.totalItems || 0,
-      activeBorrows: stats?.borrowedItems || 0,
-      overdueItems: stats?.maintenanceItems || 0,
-      monthlyBudget: 15000,
+      totalItems: summary?.total_items || 0,
+      activeBorrows: summary?.active_borrows || 0,
+      lowStockItems: summary?.low_stock_items || 0,
+      totalUsers: summary?.total_users || 0,
     }),
-    [],
+    [summary],
   );
 
   const handleGenerate = async (report) => {
     setGeneratingId(report.id);
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1500));
-    setGeneratingId(null);
-    toast.success(`${report.title} generated successfully`, {
-      description: `Report is ready for download in ${selectedExportFormat.toUpperCase()} format`,
-      duration: 4000,
-      action: {
-        label: "Download",
-        onClick: () => toast.success("Download started"),
-      },
-    });
+    try {
+      const { filename, size } = await reportService.download(
+        report.id,
+        selectedExportFormat,
+        { startDate, endDate },
+      );
+      const entry = {
+        id: crypto.randomUUID(),
+        type: report.title,
+        format: selectedExportFormat.toUpperCase(),
+        generatedBy: currentUser?.full_name || "You",
+        date: new Date().toISOString(),
+        size: formatBytes(size),
+      };
+      const next = [entry, ...recentReports].slice(0, 10);
+      setRecentReports(next);
+      try {
+        localStorage.setItem("lab_recent_reports", JSON.stringify(next));
+      } catch {
+        // localStorage may be unavailable.
+      }
+      toast.success(`${report.title} downloaded`, {
+        description: filename,
+        duration: 4000,
+      });
+    } catch (err) {
+      toast.error(`Failed to generate ${report.title}`, {
+        description: err.message,
+        duration: 5000,
+      });
+    } finally {
+      setGeneratingId(null);
+    }
   };
 
   const handleExportFormat = (format) => {
@@ -342,7 +327,7 @@ export default function Reports() {
   };
 
   // Loading state
-  if (loading) {
+  if (summaryLoading) {
     return (
       <PageTransition>
         <div className="page-container space-y-6">
@@ -400,30 +385,24 @@ export default function Reports() {
             icon={Package}
             label="Total Items"
             value={computedStats.totalItems.toLocaleString()}
-            trend={5}
-            trendUp={true}
             colorClass="bg-primary-50 text-primary-600"
           />
           <StatCard
             icon={ArrowLeftRight}
             label="Active Borrows"
             value={computedStats.activeBorrows}
-            trend={12}
-            trendUp={true}
             colorClass="bg-blue-50 text-blue-600"
           />
           <StatCard
-            icon={AlertTriangle}
-            label="Overdue Items"
-            value={computedStats.overdueItems}
-            trend={8}
-            trendUp={false}
+            icon={Boxes}
+            label="Low Stock Items"
+            value={computedStats.lowStockItems}
             colorClass="bg-red-50 text-red-600"
           />
           <StatCard
-            icon={DollarSign}
-            label="Monthly Budget"
-            value={formatCurrency(computedStats.monthlyBudget)}
+            icon={Users}
+            label="Total Users"
+            value={computedStats.totalUsers.toLocaleString()}
             colorClass="bg-green-50 text-green-600"
           />
         </motion.div>
@@ -507,21 +486,15 @@ export default function Reports() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-gray-500" />
-              <h2 className="text-lg font-semibold text-gray-900">
-                Recent Reports
-              </h2>
-            </div>
-            <button className="btn btn-ghost text-sm min-h-0 py-1.5 px-3">
-              <Download className="h-4 w-4" />
-              Download All
-            </button>
+          <div className="flex items-center gap-2 mb-4">
+            <Clock className="h-5 w-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Reports
+            </h2>
           </div>
 
           <div className="card p-0 overflow-hidden">
-            {MOCK_RECENT_REPORTS.length === 0 ? (
+            {recentReports.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 px-4">
                 <FileText className="h-10 w-10 text-gray-300 mb-3" />
                 <h3 className="text-sm font-medium text-gray-900 mb-1">
@@ -533,7 +506,7 @@ export default function Reports() {
               </div>
             ) : (
               <div className="divide-y divide-gray-50">
-                {MOCK_RECENT_REPORTS.map((report, i) => (
+                {recentReports.map((report, i) => (
                   <RecentReportItem key={report.id} report={report} index={i} />
                 ))}
               </div>
@@ -541,8 +514,8 @@ export default function Reports() {
           </div>
         </motion.div>
 
-        {/* Error state: if stats is null/empty */}
-        {!stats && (
+        {/* Error state: if stats query failed */}
+        {summaryError && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -556,7 +529,7 @@ export default function Reports() {
               Unable to fetch report data. Please try again.
             </p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => refetchSummary()}
               className="btn btn-secondary"
             >
               <RefreshCw className="h-4 w-4" />
