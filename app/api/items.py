@@ -18,11 +18,18 @@ def list_items(
     category: Optional[str] = None,
     location_id: Optional[int] = None,
     q: Optional[str] = None,
+    include_inactive: bool = False,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> list[ItemOut]:
     items = item_service.list_items(
-        db, skip=skip, limit=limit, category=category, location_id=location_id, q=q
+        db,
+        skip=skip,
+        limit=limit,
+        category=category,
+        location_id=location_id,
+        q=q,
+        include_inactive=include_inactive,
     )
     return [ItemOut.model_validate(i) for i in items]
 

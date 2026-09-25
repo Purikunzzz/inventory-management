@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Clock,
   AlertCircle,
+  ClipboardCheck,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PageTransition from "../components/PageTransition";
@@ -52,6 +53,7 @@ const FETCH_ALL_LIMIT = 500;
 
 const ADMIN_TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "approvals", label: "Approvals", icon: ClipboardCheck },
   { id: "users", label: "Users", icon: UsersIcon },
   { id: "audit", label: "Audit Logs", icon: ScrollText },
   { id: "qr", label: "QR Generator", icon: QrCodeIcon },
@@ -101,9 +103,11 @@ const STATUS_CONFIG = {
 // return is a genuine timestamped event tied to a user and an item, so this
 // tab is built entirely from GET /transactions instead of fabricated log
 // entries — no mock data, no invented users.
-const AUDIT_CATEGORIES = ["all", "borrowed", "returned", "overdue"];
+const AUDIT_CATEGORIES = ["all", "requested", "borrowed", "returned", "rejected", "overdue"];
 
 const LOG_ACTION_ICONS = {
+  "Borrow Requested": { icon: Clock, color: "bg-amber-50 text-amber-600" },
+  "Request Rejected": { icon: XCircle, color: "bg-red-50 text-red-600" },
   "Item Borrowed": { icon: ArrowLeftRight, color: "bg-blue-50 text-blue-600" },
   "Item Returned": { icon: CheckCircle, color: "bg-green-50 text-green-600" },
   Overdue: { icon: AlertCircle, color: "bg-red-50 text-red-600" },
@@ -237,7 +241,11 @@ export default function Admin() {
     queryFn: statsService.getSummary,
   });
 
-  // Fetch real users from API
+  // Fetch real users from API — include_inactive:true so disabled users
+  // don't vanish from the admin console forever. Without it, GET /users
+  // silently drops anyone with is_active=false, which made the "Disabled"
+  // status filter permanently show zero results and left admins with no
+  // way to find (or re-enable) a user they'd disabled.
   const {
     data: apiUsers = [],
     isLoading: usersLoading,
@@ -245,15 +253,17 @@ export default function Admin() {
     error: usersApiError,
   } = useQuery({
     queryKey: ["admin-users"],
-    queryFn: () => userService.listUsers({ limit: FETCH_ALL_LIMIT }),
+    queryFn: () => userService.listUsers({ limit: FETCH_ALL_LIMIT, include_inactive: true }),
   });
 
   // Items + transactions — used to build the Audit Logs tab from real
   // BorrowRecord data (see AUDIT_CATEGORIES comment below), not to compute
   // any of the Overview stats (those come from statsService.getSummary).
+  // include_inactive:true so a borrow/return of an item that was later
+  // deleted still resolves to its real name instead of "Item #42".
   const { data: apiItems = [] } = useQuery({
     queryKey: ["admin-items"],
-    queryFn: () => itemService.listItems({ limit: FETCH_ALL_LIMIT }),
+    queryFn: () => itemService.listItems({ limit: FETCH_ALL_LIMIT, include_inactive: true }),
   });
 
   const {
@@ -263,6 +273,31 @@ export default function Admin() {
   } = useQuery({
     queryKey: ["admin-transactions"],
     queryFn: () => borrowService.listTransactions({ limit: FETCH_ALL_LIMIT }),
+  });
+
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const pendingRequests = useMemo(
+    () =>
+      apiTransactions
+        .filter((t) => t.status === "pending")
+        .sort((a, b) => new Date(a.borrowed_at) - new Date(b.borrowed_at)),
+    [apiTransactions],
+  );
+
+  const reviewMutation = useMutation({
+    mutationFn: ({ id, action, note }) =>
+      action === "approve" ? borrowService.approve(id, note) : borrowService.reject(id, note),
+    onSuccess: (_, { action }) => {
+      ["admin-transactions", "transactions", "items", "admin-items", "stats-summary"].forEach(
+        (key) => queryClient.invalidateQueries({ queryKey: [key] }),
+      );
+      setRejectingId(null);
+      setRejectReason("");
+      toast.success(action === "approve" ? "Request approved" : "Request rejected");
+    },
+    onError: (err) => toast.error(err.message || "Failed to review request"),
   });
 
   const isLoading = summaryLoading || usersLoading || txnLoading;
@@ -346,11 +381,13 @@ export default function Admin() {
     apiTransactions.forEach((txn) => {
       const userName = userMap[txn.user_id] || `User #${txn.user_id}`;
       const itemName = itemMap[txn.item_id] || `Item #${txn.item_id}`;
+      const isPending = txn.status === "pending";
+      const isRejected = txn.status === "rejected";
       rows.push({
         id: `${txn.id}-borrowed`,
         timestamp: txn.borrowed_at,
-        action: "Item Borrowed",
-        category: "borrowed",
+        action: isPending ? "Borrow Requested" : isRejected ? "Request Rejected" : "Item Borrowed",
+        category: isPending ? "requested" : isRejected ? "rejected" : "borrowed",
         user: userName,
         item: itemName,
         detail: `${itemName} × ${txn.quantity}${txn.note ? ` — ${txn.note}` : ""}`,
@@ -462,7 +499,9 @@ export default function Admin() {
   const computedStats = useMemo(
     () => ({
       totalItems: summary?.total_items || 0,
-      totalUsers: apiUsers.length,
+      // Real backend aggregate (active users only) — not apiUsers.length,
+      // which now also includes disabled accounts fetched for the Users tab.
+      totalUsers: summary?.total_users || 0,
       activeBorrows: summary?.active_borrows || 0,
       systemHealth: "98.7%",
     }),
@@ -543,6 +582,11 @@ export default function Admin() {
               >
                 <tab.icon className="h-4 w-4 flex-shrink-0" />
                 {tab.label}
+                {tab.id === "approvals" && pendingRequests.length > 0 && (
+                  <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    {pendingRequests.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -824,6 +868,131 @@ export default function Admin() {
             )}
 
             {/* Audit Logs Tab */}
+            {/* Approvals Tab */}
+            {activeTab === "approvals" && (
+              <motion.div
+                key="approvals"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                className="space-y-4"
+              >
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Borrow Approvals</h2>
+                  <p className="text-sm text-gray-500">
+                    Requests from users wait here. Stock is only deducted when you approve.
+                  </p>
+                </div>
+                {pendingRequests.length === 0 ? (
+                  <div className="card flex flex-col items-center justify-center py-12 text-center">
+                    <CheckCircle className="h-10 w-10 text-green-400 mb-3" />
+                    <p className="text-sm font-medium text-gray-900">No pending requests</p>
+                    <p className="text-xs text-gray-500">You're all caught up.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingRequests.map((req) => {
+                      const item = apiItems.find((i) => i.id === req.item_id);
+                      const busy =
+                        reviewMutation.isPending && reviewMutation.variables?.id === req.id;
+                      return (
+                        <div
+                          key={req.id}
+                          className="card flex flex-col sm:flex-row sm:items-center gap-4 p-4"
+                        >
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <p className="text-sm font-semibold text-gray-900">
+                              {itemMap[req.item_id] || `Item #${req.item_id}`} × {req.quantity}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {userMap[req.user_id] || `User #${req.user_id}`} · requested{" "}
+                              {formatRelative(req.borrowed_at)}
+                              {req.due_date && ` · return by ${formatDate(req.due_date)}`}
+                            </p>
+                            {item && (
+                              <p
+                                className={cn(
+                                  "text-xs",
+                                  item.available_quantity < req.quantity
+                                    ? "text-red-600 font-medium"
+                                    : "text-gray-500",
+                                )}
+                              >
+                                In stock: {item.available_quantity}
+                              </p>
+                            )}
+                            {req.note && (
+                              <p className="text-xs text-gray-600 truncate">{req.note}</p>
+                            )}
+                          </div>
+                          {rejectingId === req.id ? (
+                            <div className="flex flex-col gap-2 sm:w-72 flex-shrink-0">
+                              <input
+                                autoFocus
+                                type="text"
+                                maxLength={500}
+                                placeholder="Reason (optional)"
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                className="input"
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setRejectingId(null);
+                                    setRejectReason("");
+                                  }}
+                                  className="btn btn-ghost min-h-[40px]"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    reviewMutation.mutate({
+                                      id: req.id,
+                                      action: "reject",
+                                      note: rejectReason.trim(),
+                                    })
+                                  }
+                                  className="btn btn-primary min-h-[40px] bg-red-600 hover:bg-red-700"
+                                >
+                                  Confirm reject
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              disabled={busy}
+                              onClick={() => {
+                                setRejectingId(req.id);
+                                setRejectReason("");
+                              }}
+                              className="btn btn-outline min-h-[40px] text-red-600"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Reject
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => reviewMutation.mutate({ id: req.id, action: "approve" })}
+                              className="btn btn-primary min-h-[40px]"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              Approve
+                            </button>
+                          </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
             {activeTab === "audit" && (
               <motion.div
                 key="audit"

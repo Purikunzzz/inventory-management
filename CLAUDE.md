@@ -70,13 +70,13 @@ Pagination: `?skip=0&limit=100`.
 `id PK | name UNIQUE | description NULL | is_active default True | created_at | updated_at`
 
 ### borrow_records
-`id PK | user_id FK idx | item_id FK idx | quantity default 1 | status Enum(borrowed,returned) idx default borrowed | borrowed_at | due_date NULL | returned_at NULL | note NULL`
+`id PK | user_id FK idx | item_id FK idx | quantity default 1 | status Enum(pending,borrowed,returned,rejected) idx | borrowed_at | due_date NULL | returned_at NULL | note NULL | reviewed_by FK NULL | reviewed_at NULL | review_note NULL`
 - `due_date` is set by frontend on borrow; used for overdue detection
 
 ### Enums
 ```python
 UserRoleEnum: admin | user        # app/models/user.py
-BorrowStatus: borrowed | returned  # app/models/borrow.py
+BorrowStatus: pending | borrowed | returned | rejected  # app/models/borrow.py
 ```
 
 ## Key service logic
@@ -89,7 +89,8 @@ BorrowStatus: borrowed | returned  # app/models/borrow.py
 - `soft_delete_user` → `is_active=False`
 
 ### borrow_service
-- `borrow_item` → 404 if item not found/inactive, 409 if `available_quantity < qty`, decrement qty, create BorrowRecord (stores `due_date`)
+- `borrow_item` → 404 if item not found/inactive, 409 if `available_quantity < qty`. Admins: decrement qty, status `borrowed`. Users: status `pending`, stock NOT held
+- `approve_borrow` / `reject_borrow` (admin only, `POST /borrow/{id}/approve|reject`) → 409 if not pending; approve re-checks stock (409) then decrements
 - `return_item` → 409 if already returned, 403 if non-admin returning other's borrow; restock qty, set `returned_at`
 - `list_transactions` → non-admins see only own records; admins see all, filterable by user_id/item_id/status
 

@@ -80,13 +80,17 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // Distinct query key from the plain `["items"]` used elsewhere (BorrowReturn,
+  // QrScanner, Analytics) — this fetch includes retired items so the Status
+  // filter's "Retired" option actually works, and those other pages must NOT
+  // share that cached (superset) result since they expect active-only data.
   const {
     data: apiItems = [],
     isLoading: itemsLoading,
     isError: itemsError,
   } = useQuery({
-    queryKey: ["items"],
-    queryFn: () => itemService.listItems({ limit: FETCH_ALL_LIMIT }),
+    queryKey: ["items", "with-inactive"],
+    queryFn: () => itemService.listItems({ limit: FETCH_ALL_LIMIT, include_inactive: true }),
   });
 
   const { data: locationList = [] } = useQuery({

@@ -20,8 +20,19 @@ class TestBorrowFlow:
         )
         self.item_id = resp.json()["id"]
 
+    def _borrow_approved(self, quantity=1):
+        """User requests, admin approves; returns the borrow record id."""
+        rid = self.client.post(
+            "/api/borrow",
+            json={"item_id": self.item_id, "quantity": quantity},
+            headers=self.user_h,
+        ).json()["id"]
+        resp = self.client.post(f"/api/borrow/{rid}/approve", headers=self.admin_h)
+        assert resp.status_code == status.HTTP_200_OK
+        return rid
+
     def test_borrow_item(self):
-        """User can borrow an item, reducing available_quantity."""
+        """User's request is pending and holds no stock until approved."""
         resp = self.client.post(
             "/api/borrow",
             json={"item_id": self.item_id, "quantity": 2},
@@ -31,13 +42,80 @@ class TestBorrowFlow:
         data = resp.json()
         assert data["item_id"] == self.item_id
         assert data["quantity"] == 2
-        assert data["status"] == "borrowed"
+        assert data["status"] == "pending"
 
-        # Check available quantity decreased
+        item = self.client.get(
+            f"/api/items/{self.item_id}", headers=self.user_h
+        ).json()
+        assert item["available_quantity"] == 5
+
+    def test_approve_decrements_stock(self):
+        self._borrow_approved(quantity=2)
         item = self.client.get(
             f"/api/items/{self.item_id}", headers=self.user_h
         ).json()
         assert item["available_quantity"] == 3  # 5 - 2
+
+    def test_admin_borrow_is_immediate(self):
+        resp = self.client.post(
+            "/api/borrow",
+            json={"item_id": self.item_id, "quantity": 2},
+            headers=self.admin_h,
+        )
+        assert resp.json()["status"] == "borrowed"
+        item = self.client.get(
+            f"/api/items/{self.item_id}", headers=self.user_h
+        ).json()
+        assert item["available_quantity"] == 3
+
+    def test_reject_keeps_stock_and_blocks_return(self):
+        rid = self.client.post(
+            "/api/borrow",
+            json={"item_id": self.item_id, "quantity": 2},
+            headers=self.user_h,
+        ).json()["id"]
+        resp = self.client.post(
+            f"/api/borrow/{rid}/reject",
+            json={"note": "not available this week"},
+            headers=self.admin_h,
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["status"] == "rejected"
+        assert resp.json()["review_note"] == "not available this week"
+        item = self.client.get(
+            f"/api/items/{self.item_id}", headers=self.user_h
+        ).json()
+        assert item["available_quantity"] == 5
+        ret = self.client.post(
+            "/api/return", json={"borrow_id": rid}, headers=self.user_h
+        )
+        assert ret.status_code == status.HTTP_409_CONFLICT
+
+    def test_review_requires_admin(self):
+        rid = self.client.post(
+            "/api/borrow",
+            json={"item_id": self.item_id, "quantity": 1},
+            headers=self.user_h,
+        ).json()["id"]
+        for action in ("approve", "reject"):
+            resp = self.client.post(f"/api/borrow/{rid}/{action}", headers=self.user_h)
+            assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_review_twice_conflicts(self):
+        rid = self._borrow_approved()
+        resp = self.client.post(f"/api/borrow/{rid}/approve", headers=self.admin_h)
+        assert resp.status_code == status.HTTP_409_CONFLICT
+
+    def test_approve_rechecks_stock(self):
+        first = self.client.post(
+            "/api/borrow", json={"item_id": self.item_id, "quantity": 4}, headers=self.user_h
+        ).json()["id"]
+        second = self.client.post(
+            "/api/borrow", json={"item_id": self.item_id, "quantity": 4}, headers=self.user_h
+        ).json()["id"]
+        assert self.client.post(f"/api/borrow/{first}/approve", headers=self.admin_h).status_code == 200
+        resp = self.client.post(f"/api/borrow/{second}/approve", headers=self.admin_h)
+        assert resp.status_code == status.HTTP_409_CONFLICT
 
     def test_borrow_insufficient_stock(self):
         """Borrowing beyond available → 409."""
@@ -57,13 +135,7 @@ class TestBorrowFlow:
 
     def test_return_item(self):
         """Returning should increase available quantity and set status to returned."""
-        # Borrow first
-        borrow = self.client.post(
-            "/api/borrow",
-            json={"item_id": self.item_id, "quantity": 1},
-            headers=self.user_h,
-        )
-        record_id = borrow.json()["id"]
+        record_id = self._borrow_approved()
 
         resp = self.client.post(
             "/api/return",
@@ -83,12 +155,7 @@ class TestBorrowFlow:
 
     def test_return_already_returned(self):
         """Returning an already-returned record → 409."""
-        borrow = self.client.post(
-            "/api/borrow",
-            json={"item_id": self.item_id, "quantity": 1},
-            headers=self.user_h,
-        )
-        record_id = borrow.json()["id"]
+        record_id = self._borrow_approved()
         self.client.post(
             "/api/return", json={"borrow_id": record_id}, headers=self.user_h
         )

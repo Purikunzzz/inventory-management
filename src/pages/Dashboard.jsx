@@ -204,7 +204,7 @@ export default function Dashboard() {
         item: null,
         itemId: t.item_id,
         borrowDate: t.borrowed_at,
-        type: t.status === "borrowed" ? "borrow" : "return",
+        type: t.status === "returned" ? "return" : "borrow",
         purpose: t.note,
       })),
     [recentTxns],

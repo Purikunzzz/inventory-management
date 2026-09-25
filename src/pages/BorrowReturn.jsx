@@ -706,7 +706,7 @@ function ReturnTab({ currentUser, items, transactions, returnMutation }) {
 function MyItemsTab({ currentUser, items, transactions }) {
   const myItems = useMemo(() => {
     return transactions
-      .filter((t) => t.status === "borrowed")
+      .filter((t) => ["borrowed", "pending", "rejected"].includes(t.status))
       .sort((a, b) => new Date(b.borrowed_at) - new Date(a.borrowed_at));
   }, [transactions]);
 
@@ -715,7 +715,7 @@ function MyItemsTab({ currentUser, items, transactions }) {
       <EmptyState
         icon={Package}
         title="No Active Items"
-        description="You haven't borrowed any items yet."
+        description="You haven't borrowed or requested any items yet."
       />
     );
   }
@@ -735,9 +735,17 @@ function MyItemsTab({ currentUser, items, transactions }) {
       <div className="divide-y divide-gray-50">
         {myItems.map((txn) => {
           const item = findItem(items, txn.item_id);
-          const isOverdue = txn.due_date
-            ? new Date(txn.due_date) < new Date()
-            : false;
+          const isOverdue =
+            txn.status === "borrowed" && txn.due_date
+              ? new Date(txn.due_date) < new Date()
+              : false;
+          const badge = {
+            pending: { cls: "badge-warning", label: "Awaiting approval" },
+            rejected: { cls: "badge-danger", label: "Rejected" },
+          }[txn.status] || {
+            cls: isOverdue ? "badge-danger" : "badge-primary",
+            label: isOverdue ? "Overdue" : "Active",
+          };
           return (
             <motion.div
               key={txn.id}
@@ -787,14 +795,10 @@ function MyItemsTab({ currentUser, items, transactions }) {
               </div>
 
               <div className="sm:col-span-2">
-                <span
-                  className={cn(
-                    "badge",
-                    isOverdue ? "badge-danger" : "badge-primary",
-                  )}
-                >
-                  {isOverdue ? "Overdue" : "Active"}
-                </span>
+                <span className={cn("badge", badge.cls)}>{badge.label}</span>
+                {txn.status === "rejected" && txn.review_note && (
+                  <p className="text-xs text-gray-500 mt-1">{txn.review_note}</p>
+                )}
               </div>
             </motion.div>
           );
@@ -954,10 +958,17 @@ export default function BorrowReturn() {
 
   const borrowMutation = useMutation({
     mutationFn: borrowService.borrow,
-    onSuccess: () => {
+    onSuccess: (record) => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["items"] });
-      toast.success("Item borrowed successfully");
+      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      if (record?.status === "pending") {
+        toast.success("Borrow request sent", {
+          description: "An admin needs to approve it before you can pick up the item.",
+        });
+      } else {
+        toast.success("Item borrowed successfully");
+      }
     },
     onError: (err) => toast.error(err.message),
   });

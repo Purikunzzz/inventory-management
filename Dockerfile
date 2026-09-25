@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY equipment.csv /app/equipment.csv
+COPY equipment.csv images.csv* /app/
 
 EXPOSE 8000
 

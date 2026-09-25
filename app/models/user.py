@@ -50,4 +50,6 @@ class User(Base):
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
-    borrow_records = relationship("BorrowRecord", back_populates="user")
+    borrow_records = relationship(
+        "BorrowRecord", back_populates="user", foreign_keys="BorrowRecord.user_id"
+    )

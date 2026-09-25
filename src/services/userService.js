@@ -5,6 +5,7 @@ export const userService = {
     const query = new URLSearchParams()
     if (params.skip !== undefined) query.set('skip', params.skip)
     if (params.limit !== undefined) query.set('limit', params.limit)
+    if (params.include_inactive !== undefined) query.set('include_inactive', params.include_inactive)
     const qs = query.toString()
     return apiClient.get(`/users${qs ? `?${qs}` : ''}`)
   },

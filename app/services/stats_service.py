@@ -6,6 +6,9 @@ from typing import Any
 from app.models.item import Item
 from app.models.user import User
 from app.models.borrow import BorrowRecord, BorrowStatus
+
+# Pending/rejected requests never left the shelf, so they don't count as usage.
+_REAL_LOANS = (BorrowStatus.borrowed, BorrowStatus.returned)
 from app.schemas.stats import SummaryOut, ItemUsageOut, StockMovementOut, LowStockOut
 
 
@@ -47,6 +50,7 @@ def item_usage(db: Session, limit: int = 10) -> list[ItemUsageOut]:
             func.coalesce(func.sum(BorrowRecord.quantity), 0).label("total_quantity_borrowed"),
         )
         .join(BorrowRecord, BorrowRecord.item_id == Item.id)
+        .filter(BorrowRecord.status.in_(_REAL_LOANS))
         .group_by(Item.id, Item.name, Item.image_url)
         .order_by(func.count(BorrowRecord.id).desc())
         .limit(limit)
@@ -73,7 +77,7 @@ def stock_movement(db: Session, days: int = 30) -> list[StockMovementOut]:
             func.date(BorrowRecord.borrowed_at).label("day"),
             func.coalesce(func.sum(BorrowRecord.quantity), 0).label("qty"),
         )
-        .filter(BorrowRecord.borrowed_at >= since)
+        .filter(BorrowRecord.borrowed_at >= since, BorrowRecord.status.in_(_REAL_LOANS))
         .group_by(func.date(BorrowRecord.borrowed_at))
         .all()
     )
@@ -134,7 +138,7 @@ def leaderboard(db: Session, limit: int = 10) -> list[dict[str, Any]]:
             func.coalesce(func.sum(BorrowRecord.quantity), 0).label("total_quantity"),
         )
         .join(BorrowRecord, BorrowRecord.user_id == User.id)
-        .filter(User.is_active.is_(True))
+        .filter(User.is_active.is_(True), BorrowRecord.status.in_(_REAL_LOANS))
         .group_by(User.id, User.full_name, User.email, User.department)
         .order_by(func.count(BorrowRecord.id).desc())
         .limit(limit)
@@ -154,62 +158,63 @@ def leaderboard(db: Session, limit: int = 10) -> list[dict[str, Any]]:
     ]
 
 
-def recommendations(db: Session, limit: int = 12) -> list[dict[str, Any]]:
-    """Generate item recommendations based on co-borrowing patterns by category."""
-    # Get top borrowed items with their categories
-    top_items = (
-        db.query(
-            Item.id,
-            Item.name,
-            Item.category,
-            Item.available_quantity,
-            func.count(BorrowRecord.id).label("borrow_count"),
-        )
-        .join(BorrowRecord, BorrowRecord.item_id == Item.id)
-        .filter(Item.is_active.is_(True))
-        .group_by(Item.id, Item.name, Item.category, Item.available_quantity)
-        .order_by(func.count(BorrowRecord.id).desc())
-        .limit(50)
+def _borrowers_by_item(db: Session) -> dict[int, set[int]]:
+    """item_id -> ids of users who really borrowed it."""
+    rows = (
+        db.query(BorrowRecord.item_id, BorrowRecord.user_id)
+        .filter(BorrowRecord.status.in_(_REAL_LOANS))
+        .distinct()
         .all()
     )
+    borrowers: dict[int, set[int]] = {}
+    for item_id, user_id in rows:
+        borrowers.setdefault(item_id, set()).add(user_id)
+    return borrowers
 
-    # Group items by category to build co-borrow recommendations
-    category_map: dict[str, list] = {}
-    for row in top_items:
-        cat = row.category or "General"
-        category_map.setdefault(cat, [])
-        category_map[cat].append(row)
 
+def _co_borrowed(source_id: int, borrowers: dict[int, set[int]]) -> list[tuple[int, int]]:
+    """Other items ranked by how many of the source's borrowers also borrowed them."""
+    users = borrowers[source_id]
+    scored = [
+        (other_id, len(users & other_users))
+        for other_id, other_users in borrowers.items()
+        if other_id != source_id
+    ]
+    return sorted((p for p in scored if p[1] > 0), key=lambda p: (-p[1], p[0]))
+
+
+def recommendations(db: Session, limit: int = 12) -> list[dict[str, Any]]:
+    """Items other users also borrowed, from real co-borrowing history.
+
+    For each item, related items are ranked by how many distinct users borrowed
+    both. ``confidence`` is the share of the source item's borrowers who also
+    borrowed the top related item.
+    """
+    borrowers = _borrowers_by_item(db)
+    items = {
+        i.id: i
+        for i in db.query(Item).filter(Item.id.in_(borrowers.keys()), Item.is_active.is_(True)).all()
+    }
     recs = []
-    seen_ids: set = set()
-    for cat, cat_items in category_map.items():
-        if len(cat_items) < 2:
+    for source_id in sorted(borrowers, key=lambda k: -len(borrowers[k])):
+        source = items.get(source_id)
+        ranked = [(oid, n) for oid, n in _co_borrowed(source_id, borrowers) if oid in items]
+        if not source or not ranked:
             continue
-        for i, source in enumerate(cat_items[:6]):
-            if source.id in seen_ids:
-                continue
-            related = [
-                {"id": ci.id, "name": ci.name, "category": ci.category}
-                for ci in cat_items
-                if ci.id != source.id
-            ][:4]
-            if not related:
-                continue
-            seen_ids.add(source.id)
-            confidence = min(0.95, 0.5 + source.borrow_count / 100)
-            recs.append({
-                "id": f"rec-{source.id}",
-                "item_id": source.id,
-                "item_name": source.name,
-                "category": cat,
-                "borrow_count": int(source.borrow_count),
-                "confidence": round(confidence, 2),
-                "reason": f"Frequently borrowed in {cat} category",
-                "related_items": related,
-            })
-            if len(recs) >= limit:
-                break
+        top_users = len(borrowers[source_id])
+        recs.append({
+            "id": f"rec-{source_id}",
+            "item_id": source_id,
+            "item_name": source.name,
+            "category": source.category or "General",
+            "borrow_count": top_users,
+            "confidence": round(ranked[0][1] / top_users, 2),
+            "reason": f"{ranked[0][1]} of {top_users} users who borrowed this also borrowed {items[ranked[0][0]].name}",
+            "related_items": [
+                {"id": oid, "name": items[oid].name, "category": items[oid].category or "General"}
+                for oid, _ in ranked[:4]
+            ],
+        })
         if len(recs) >= limit:
             break
-
     return recs
