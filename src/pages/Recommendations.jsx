@@ -168,7 +168,7 @@ function FBTGroup({ group, onAddAll, index }) {
             <h4 className="font-semibold text-gray-900">{group.groupName}</h4>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            {group.borrow_count} borrows &middot; {group.category}
+            {group.borrow_count} borrowers &middot; {group.category}
           </p>
         </div>
         <button

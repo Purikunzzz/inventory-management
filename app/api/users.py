@@ -38,10 +38,11 @@ def create_user(
 def list_users(
     skip: int = 0,
     limit: int = 100,
+    include_inactive: bool = False,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[UserOut]:
-    users = auth_service.list_users(db, skip=skip, limit=limit)
+    users = auth_service.list_users(db, skip=skip, limit=limit, include_inactive=include_inactive)
     return [UserOut.model_validate(u) for u in users]
 
 

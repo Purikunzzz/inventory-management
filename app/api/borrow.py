@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_admin
 from app.models.user import User
-from app.schemas.borrow import BorrowRequest, ReturnRequest, BorrowOut, BorrowStatusEnum
+from app.schemas.borrow import BorrowRequest, ReturnRequest, ReviewRequest, BorrowOut, BorrowStatusEnum
 from app.services import borrow_service
 
 
@@ -29,6 +29,26 @@ def return_(
 ) -> BorrowOut:
     record = borrow_service.return_item(db, current, body)
     return BorrowOut.model_validate(record)
+
+
+@router.post("/borrow/{borrow_id}/approve", response_model=BorrowOut, status_code=status.HTTP_200_OK)
+def approve(
+    borrow_id: int,
+    body: ReviewRequest = ReviewRequest(),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> BorrowOut:
+    return BorrowOut.model_validate(borrow_service.approve_borrow(db, admin, borrow_id, body))
+
+
+@router.post("/borrow/{borrow_id}/reject", response_model=BorrowOut, status_code=status.HTTP_200_OK)
+def reject(
+    borrow_id: int,
+    body: ReviewRequest = ReviewRequest(),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> BorrowOut:
+    return BorrowOut.model_validate(borrow_service.reject_borrow(db, admin, borrow_id, body))
 
 
 @router.get("/transactions", response_model=list[BorrowOut], status_code=status.HTTP_200_OK)

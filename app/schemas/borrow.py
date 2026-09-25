@@ -5,8 +5,10 @@ from enum import Enum
 
 
 class BorrowStatusEnum(str, Enum):
+    pending = "pending"
     borrowed = "borrowed"
     returned = "returned"
+    rejected = "rejected"
 
 
 class BorrowRequest(BaseModel):
@@ -21,6 +23,10 @@ class ReturnRequest(BaseModel):
     note: Optional[str] = Field(default=None, max_length=500)
 
 
+class ReviewRequest(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
 class BorrowOut(BaseModel):
     id: int
     user_id: int
@@ -31,5 +37,8 @@ class BorrowOut(BaseModel):
     due_date: Optional[datetime] = None
     returned_at: Optional[datetime] = None
     note: Optional[str] = None
+    reviewed_by: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    review_note: Optional[str] = None
 
     model_config = {"from_attributes": True}

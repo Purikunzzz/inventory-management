@@ -107,3 +107,19 @@ class TestUsersCRUD:
             f"/api/users/{normal_user.id}", headers=auth_header
         )
         assert get_resp.json()["is_active"] is False
+
+    def test_deactivated_user_hidden_by_default_but_visible_with_include_inactive(
+        self, client, auth_header, normal_user
+    ):
+        """Regression: a disabled user must not vanish from /api/users forever —
+        the admin panel needs `include_inactive=true` to find and re-enable them."""
+        client.delete(f"/api/users/{normal_user.id}", headers=auth_header)
+
+        default_resp = client.get("/api/users", headers=auth_header)
+        assert normal_user.id not in [u["id"] for u in default_resp.json()]
+
+        full_resp = client.get(
+            "/api/users?include_inactive=true", headers=auth_header
+        )
+        ids = [u["id"] for u in full_resp.json()]
+        assert normal_user.id in ids

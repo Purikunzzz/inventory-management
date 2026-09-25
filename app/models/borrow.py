@@ -11,8 +11,10 @@ def _utcnow() -> datetime:
 
 
 class BorrowStatus(str, enum.Enum):
+    pending = "pending"
     borrowed = "borrowed"
     returned = "returned"
+    rejected = "rejected"
 
 
 class BorrowRecord(Base):
@@ -32,5 +34,11 @@ class BorrowRecord(Base):
     returned_at = Column(DateTime, nullable=True)
     note = Column(String(500), nullable=True)
 
-    user = relationship("User", back_populates="borrow_records")
+    # Set when an admin approves or rejects a pending request.
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    review_note = Column(String(500), nullable=True)
+
+    user = relationship("User", back_populates="borrow_records", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
     item = relationship("Item", back_populates="borrow_records")

@@ -123,3 +123,10 @@ class TestItemsCRUD:
         resp2 = client.get("/api/items", headers=auth_header)
         ids = [i["id"] for i in resp2.json()]
         assert item_id not in ids
+
+        # Regression: a soft-deleted item must still be reachable with
+        # include_inactive=true (e.g. the Inventory page's "Retired" filter),
+        # not just silently gone forever.
+        resp3 = client.get("/api/items?include_inactive=true", headers=auth_header)
+        ids3 = [i["id"] for i in resp3.json()]
+        assert item_id in ids3

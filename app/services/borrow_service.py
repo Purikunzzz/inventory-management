@@ -6,39 +6,92 @@ from datetime import datetime, timezone
 from app.models.borrow import BorrowRecord, BorrowStatus
 from app.models.item import Item
 from app.models.user import User, UserRoleEnum
-from app.schemas.borrow import BorrowRequest, ReturnRequest, BorrowStatusEnum
+from app.schemas.borrow import BorrowRequest, ReturnRequest, ReviewRequest, BorrowStatusEnum
 
 
-def borrow_item(db: Session, user: User, body: BorrowRequest) -> BorrowRecord:
-    """Decrement available_quantity and create a BorrowRecord.
-
-    Returns 409 Conflict when the requested quantity exceeds stock on hand.
-    """
+def _locked_item(db: Session, item_id: int) -> Item:
     item = (
         db.query(Item)
-        .filter(Item.id == body.item_id, Item.is_active.is_(True))
+        .filter(Item.id == item_id, Item.is_active.is_(True))
         .with_for_update()
         .first()
     )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    return item
 
-    if item.available_quantity < body.quantity:
+
+def _require_stock(item: Item, quantity: int) -> None:
+    if item.available_quantity < quantity:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Not enough stock available to borrow",
         )
 
-    item.available_quantity -= body.quantity
+
+def borrow_item(db: Session, user: User, body: BorrowRequest) -> BorrowRecord:
+    """Create a borrow request.
+
+    Admins borrow immediately (stock is decremented). Everyone else creates a
+    ``pending`` request that holds no stock until an admin approves it.
+    Returns 409 Conflict when the requested quantity exceeds stock on hand.
+    """
+    item = _locked_item(db, body.item_id)
+    _require_stock(item, body.quantity)
+
+    auto_approve = user.role == UserRoleEnum.admin
+    if auto_approve:
+        item.available_quantity -= body.quantity
     record = BorrowRecord(
         user_id=user.id,
         item_id=item.id,
         quantity=body.quantity,
-        status=BorrowStatus.borrowed,
+        status=BorrowStatus.borrowed if auto_approve else BorrowStatus.pending,
         due_date=body.due_date,
         note=body.note,
     )
     db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def _get_pending(db: Session, borrow_id: int) -> BorrowRecord:
+    record = db.query(BorrowRecord).filter(BorrowRecord.id == borrow_id).first()
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Borrow record not found")
+    if record.status != BorrowStatus.pending:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is not pending")
+    return record
+
+
+def _stamp_review(record: BorrowRecord, admin: User, body: ReviewRequest) -> None:
+    now = datetime.now(timezone.utc)
+    record.reviewed_by = admin.id
+    record.reviewed_at = now
+    record.review_note = body.note
+
+
+def approve_borrow(db: Session, admin: User, borrow_id: int, body: ReviewRequest) -> BorrowRecord:
+    """Approve a pending request: re-check stock, decrement it, start the loan."""
+    record = _get_pending(db, borrow_id)
+    item = _locked_item(db, record.item_id)
+    _require_stock(item, record.quantity)
+
+    item.available_quantity -= record.quantity
+    record.status = BorrowStatus.borrowed
+    record.borrowed_at = datetime.now(timezone.utc)
+    _stamp_review(record, admin, body)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def reject_borrow(db: Session, admin: User, borrow_id: int, body: ReviewRequest) -> BorrowRecord:
+    """Reject a pending request; stock was never held so nothing is restocked."""
+    record = _get_pending(db, borrow_id)
+    record.status = BorrowStatus.rejected
+    _stamp_review(record, admin, body)
     db.commit()
     db.refresh(record)
     return record
@@ -52,6 +105,8 @@ def return_item(db: Session, user: User, body: ReturnRequest) -> BorrowRecord:
 
     if record.status == BorrowStatus.returned:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Item already returned")
+    if record.status != BorrowStatus.borrowed:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Borrow request was not approved")
 
     # Regular users can only return what they themselves borrowed; admins may
     # return on anyone's behalf (e.g. lab cleanup).

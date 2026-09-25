@@ -9,6 +9,14 @@ export const borrowService = {
     return apiClient.post('/return', data)
   },
 
+  approve(id, note) {
+    return apiClient.post(`/borrow/${id}/approve`, { note: note || null })
+  },
+
+  reject(id, note) {
+    return apiClient.post(`/borrow/${id}/reject`, { note: note || null })
+  },
+
   listTransactions(params = {}) {
     const query = new URLSearchParams()
     if (params.skip !== undefined) query.set('skip', params.skip)

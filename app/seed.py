@@ -43,3 +43,32 @@ def seed_if_empty() -> None:
         print(f"Seed failed: {e}")
     finally:
         db.close()
+
+
+IMAGES_PATH = str(pathlib.Path(__file__).resolve().parent.parent / "images.csv")
+
+
+def apply_images() -> None:
+    """Fill image_url from images.csv for items that don't have one yet.
+
+    Idempotent and never overwrites an image set through the app, so a fresh
+    database recovers its photos without anyone re-adding them.
+    """
+    if not os.path.exists(IMAGES_PATH):
+        return
+    db = SessionLocal()
+    try:
+        with open(IMAGES_PATH, newline="", encoding="utf-8") as f:
+            urls = {r["Name"].strip(): r["Image URL"].strip() for r in csv.DictReader(f) if r.get("Image URL")}
+        updated = 0
+        for item in db.query(Item).filter(Item.image_url.is_(None)).all():
+            if item.name in urls:
+                item.image_url = urls[item.name]
+                updated += 1
+        db.commit()
+        print(f"Applied {updated} image URLs from images.csv")
+    except Exception as e:
+        db.rollback()
+        print(f"Image restore failed: {e}")
+    finally:
+        db.close()
