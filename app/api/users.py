@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_or_admin, get_db, get_current_user, require_admin
 from app.models.user import User, UserRoleEnum
-from app.schemas.user import CreateUser, UpdateUser, UserOut
+from app.schemas.user import ChangePassword, CreateUser, UpdateUser, UserOut
 from app.services import auth_service
 
 
@@ -18,9 +18,19 @@ def update_me(
 ) -> UserOut:
     """Allow any authenticated user to update their own profile (full_name only)."""
     # Only allow updating full_name — strip role/email/password changes for self-update
-    data = body.model_dump(exclude_unset=True)
-    safe = UpdateUser(full_name=data.get("full_name")) if "full_name" in data else UpdateUser()
+    full_name = body.full_name
+    safe = UpdateUser(full_name=full_name) if full_name is not None else UpdateUser()
     user = auth_service.update_user(db, current.id, safe)
+    return UserOut.model_validate(user)
+
+
+@router.patch("/me/password", response_model=UserOut, status_code=status.HTTP_200_OK)
+def change_my_password(
+    body: ChangePassword,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+) -> UserOut:
+    user = auth_service.change_password(db, current, body)
     return UserOut.model_validate(user)
 
 

@@ -19,6 +19,14 @@ export const userService = {
     return apiClient.patch('/users/me', data)
   },
 
+  /** Change own password — backend verifies currentPassword. */
+  changePassword(currentPassword, newPassword) {
+    return apiClient.patch('/users/me/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    })
+  },
+
   createUser(data) {
     return apiClient.post('/users', data)
   },

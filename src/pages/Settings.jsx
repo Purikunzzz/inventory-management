@@ -176,7 +176,7 @@ export default function Settings() {
 
   // ── Password change mutation ──
   const passwordMutation = useMutation({
-    mutationFn: (data) => userService.updateUser(currentUser.id, { password: data.new }),
+    mutationFn: (data) => userService.changePassword(data.current, data.new),
     onSuccess: () => {
       setPasswordForm({ current: "", new: "", confirm: "" });
       toast.success("Password changed", { description: "Your password has been updated." });
