@@ -28,7 +28,16 @@ async function request(endpoint, options = {}) {
     return null;
   }
 
-  const data = await res.json();
+  // Body may be empty or non-JSON (e.g. an HTML 502 page during a Render cold start).
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
 
   if (!res.ok) {
     // Auto-logout on 401 — token expired or invalid.
@@ -45,7 +54,15 @@ async function request(endpoint, options = {}) {
       }
     }
 
-    const message = data?.detail || `Request failed with status ${res.status}`;
+    const detail = data?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail) && detail[0]?.msg
+          ? detail[0].msg // Pydantic 422: [{loc, msg, type}, ...]
+          : res.status >= 500
+            ? `Server unavailable (${res.status}). Please try again shortly.`
+            : `Request failed with status ${res.status}`;
     const error = new Error(message);
     error.status = res.status;
     throw error;
