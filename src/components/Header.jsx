@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn, getInitials } from "../lib/utils";
 import { useAuth } from "../hooks/useAuth";
+import { useNotifications } from "../hooks/useNotifications";
 
 // Breadcrumb builder from pathname
 function buildBreadcrumbs(pathname) {
@@ -61,62 +62,23 @@ export default function Header({
   const notifRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // ── Notification state backed by localStorage ──
-  const NOTIF_LS_KEY = "lab_header_notifications";
-
-  const defaultNotifications = [
-    {
-      id: 1,
-      title: "New item added",
-      desc: "Centrifuge X-200 was added to inventory",
-      time: "5m ago",
-      unread: true,
-    },
-    {
-      id: 2,
-      title: "Maintenance due",
-      desc: "Spectrophotometer requires calibration",
-      time: "1h ago",
-      unread: true,
-    },
-    {
-      id: 3,
-      title: "Borrow approved",
-      desc: "Your request for 3 pipettes was approved",
-      time: "3h ago",
-      unread: true,
-    },
-  ];
-
-  function loadNotifications() {
-    try {
-      const stored = localStorage.getItem(NOTIF_LS_KEY);
-      return stored ? JSON.parse(stored) : defaultNotifications;
-    } catch {
-      return defaultNotifications;
-    }
-  }
-
-  const [notifications, setNotifications] = useState(loadNotifications);
-
-  // Persist notifications to localStorage whenever they change
-  useEffect(() => {
-    try {
-      localStorage.setItem(NOTIF_LS_KEY, JSON.stringify(notifications));
-    } catch {}
-  }, [notifications]);
-
+  // ── Notifications derived from real borrow/stock/maintenance data ──
+  const { notifications, markRead, markAllRead } = useNotifications(currentUser);
   const notificationCount = notifications.filter((n) => n.unread).length;
 
-  const handleMarkOneRead = useCallback((id) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: false } : n)),
-    );
-  }, []);
+  const handleMarkOneRead = useCallback(
+    (id) => {
+      markRead(id);
+      const target = notifications.find((n) => n.id === id);
+      if (target?.link) {
+        setNotificationsOpen(false);
+        navigate(target.link);
+      }
+    },
+    [markRead, notifications, navigate],
+  );
 
-  const handleMarkAllRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
-  }, []);
+  const handleMarkAllRead = markAllRead;
 
   // Close menus on outside click
   useEffect(() => {

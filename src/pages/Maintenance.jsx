@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -31,7 +32,22 @@ import {
   getConditionColor,
   truncate,
 } from "../lib/utils";
-import { maintenanceRecords, items, users } from "../data/mockData";
+import { maintenanceService } from "../services/maintenanceService";
+import { itemService } from "../services/itemService";
+import { userService } from "../services/userService";
+import { useAuth } from "../hooks/useAuth";
+
+const CURRENCY = "THB";
+const money = (v) => formatCurrency(Number(v) || 0, CURRENCY);
+const todayISO = () => new Date().toISOString().split("T")[0];
+
+/** A scheduled job whose date has passed is shown as Overdue. */
+function displayStatus(record) {
+  if (record.status === "scheduled" && record.scheduled_date < todayISO()) {
+    return "overdue";
+  }
+  return record.status;
+}
 
 // ---- Constants ----
 const TABS = [
@@ -70,7 +86,8 @@ const STATUS_CONFIG = {
     label: "In Progress",
   },
   completed: { bg: "bg-green-50", text: "text-green-700", label: "Completed" },
-  calibration_due: { bg: "bg-red-50", text: "text-red-700", label: "Overdue" },
+  cancelled: { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
+  overdue: { bg: "bg-red-50", text: "text-red-700", label: "Overdue" },
 };
 
 // ---- Skeleton ----
@@ -108,41 +125,35 @@ function StatCard({ icon: Icon, label, value, sub, colorClass }) {
 }
 
 // ---- Schedule Modal ----
-function ScheduleModal({ isOpen, onClose, onSchedule, itemsList }) {
-  const [form, setForm] = useState({
+function ScheduleModal({ isOpen, onClose, onSchedule, itemsList, technicians, isSubmitting }) {
+  const emptyForm = () => ({
     itemId: "",
     type: "repair",
-    date: "",
+    date: todayISO(),
+    technicianId: "",
+    cost: "",
     notes: "",
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
-    if (isOpen) {
-      const today = new Date().toISOString().split("T")[0];
-      setForm({ itemId: "", type: "repair", date: today, notes: "" });
-    }
+    if (isOpen) setForm(emptyForm());
   }, [isOpen]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.itemId || !form.date) {
       toast.error("Please fill in all required fields");
       return;
     }
-    setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
     onSchedule({
-      ...form,
-      id: `MAINT-${Date.now()}`,
-      status: "scheduled",
-      cost: 0,
-      technicianId: "USER-004",
-      nextDue: form.date,
+      item_id: Number(form.itemId),
+      type: form.type,
+      scheduled_date: form.date,
+      technician_id: form.technicianId ? Number(form.technicianId) : null,
+      cost: form.cost === "" ? 0 : Number(form.cost),
+      notes: form.notes.trim() || null,
     });
-    toast.success("Maintenance scheduled successfully");
-    setIsSubmitting(false);
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -197,7 +208,7 @@ function ScheduleModal({ isOpen, onClose, onSchedule, itemsList }) {
                 <option value="">Select equipment...</option>
                 {itemsList.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.name} ({item.id})
+                    {item.name} (#{item.id})
                   </option>
                 ))}
               </select>
@@ -231,6 +242,42 @@ function ScheduleModal({ isOpen, onClose, onSchedule, itemsList }) {
                 onChange={(date) => setForm({ ...form, date })}
                 ariaLabel="Scheduled date"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label" htmlFor="m-tech">
+                  Technician
+                </label>
+                <select
+                  id="m-tech"
+                  className="input"
+                  value={form.technicianId}
+                  onChange={(e) => setForm({ ...form, technicianId: e.target.value })}
+                >
+                  <option value="">Unassigned</option>
+                  {technicians.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name || u.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label" htmlFor="m-cost">
+                  Estimated Cost ({CURRENCY})
+                </label>
+                <input
+                  id="m-cost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  placeholder="0"
+                  value={form.cost}
+                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                />
+              </div>
             </div>
 
             <div>
@@ -281,19 +328,44 @@ function ScheduleModal({ isOpen, onClose, onSchedule, itemsList }) {
 }
 
 // ---- Detail Modal ----
-function DetailModal({
-  record,
-  isOpen,
-  onClose,
-  getItemName,
-  getTechnicianName,
-}) {
+const NEXT_ACTIONS = {
+  scheduled: [
+    { status: "in_progress", label: "Start", className: "btn-primary" },
+    { status: "cancelled", label: "Cancel Job", className: "btn-secondary" },
+  ],
+  in_progress: [
+    { status: "completed", label: "Mark Completed", className: "btn-primary" },
+    { status: "cancelled", label: "Cancel Job", className: "btn-secondary" },
+  ],
+};
+
+function DetailModal({ record, isOpen, onClose, isAdmin, onUpdate, onDelete, isSaving }) {
+  const [cost, setCost] = useState("");
+  const [nextDue, setNextDue] = useState("");
+
+  useEffect(() => {
+    if (record) {
+      setCost(String(record.cost ?? 0));
+      setNextDue(record.next_due || "");
+    }
+  }, [record]);
+
   if (!isOpen || !record) return null;
+
+  const actions = isAdmin ? NEXT_ACTIONS[record.status] || [] : [];
+  const handleAction = (status) => {
+    const body = { status };
+    if (status === "completed") {
+      body.cost = cost === "" ? 0 : Number(cost);
+      body.next_due = nextDue || null;
+    }
+    onUpdate(record.id, body);
+  };
 
   const TypeIcon = TYPE_ICONS[record.type]?.icon || Wrench;
   const TypeColor =
     TYPE_ICONS[record.type]?.color || "bg-gray-50 text-gray-600";
-  const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.scheduled;
+  const statusConfig = STATUS_CONFIG[displayStatus(record)] || STATUS_CONFIG.scheduled;
 
   return (
     <AnimatePresence>
@@ -334,7 +406,7 @@ function DetailModal({
               </div>
               <div>
                 <p className="font-medium text-gray-900">
-                  {getItemName(record.itemId)}
+                  {record.item_name || `Item #${record.item_id}`}
                 </p>
                 <p className="text-sm text-gray-500">
                   {TYPE_LABELS[record.type] || record.type}
@@ -358,28 +430,37 @@ function DetailModal({
               <div>
                 <span className="text-gray-500">Date</span>
                 <span className="ml-2 font-medium text-gray-900">
-                  {formatDate(record.date)}
+                  {formatDate(record.scheduled_date)}
                 </span>
               </div>
               <div>
                 <span className="text-gray-500">Cost</span>
                 <span className="ml-2 font-medium text-gray-900">
-                  {formatCurrency(record.cost)}
+                  {money(record.cost)}
                 </span>
               </div>
               <div>
                 <span className="text-gray-500">Technician</span>
                 <span className="ml-2 font-medium text-gray-900">
-                  {getTechnicianName(record.technicianId)}
+                  {record.technician_name || "Unassigned"}
                 </span>
               </div>
             </div>
 
-            {record.nextDue && (
+            {record.completed_at && (
+              <div className="text-sm">
+                <span className="text-gray-500">Completed</span>
+                <span className="ml-2 font-medium text-gray-900">
+                  {formatDate(record.completed_at)}
+                </span>
+              </div>
+            )}
+
+            {record.next_due && (
               <div className="text-sm">
                 <span className="text-gray-500">Next Due</span>
                 <span className="ml-2 font-medium text-gray-900">
-                  {formatDate(record.nextDue)}
+                  {formatDate(record.next_due)}
                 </span>
               </div>
             )}
@@ -390,9 +471,65 @@ function DetailModal({
               </p>
             </div>
 
-            <button onClick={onClose} className="btn btn-secondary w-full">
-              Close
-            </button>
+            {actions.some((a) => a.status === "completed") && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label" htmlFor="d-cost">
+                    Final Cost ({CURRENCY})
+                  </label>
+                  <input
+                    id="d-cost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="input"
+                    value={cost}
+                    onChange={(e) => setCost(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="d-next">
+                    Next Due
+                  </label>
+                  <DatePicker
+                    id="d-next"
+                    value={nextDue}
+                    onChange={setNextDue}
+                    ariaLabel="Next due date"
+                  />
+                </div>
+              </div>
+            )}
+
+            {actions.length > 0 && (
+              <div className="flex gap-3">
+                {actions.map((a) => (
+                  <button
+                    key={a.status}
+                    disabled={isSaving}
+                    onClick={() => handleAction(a.status)}
+                    className={cn("btn flex-1", a.className)}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              {isAdmin && (
+                <button
+                  disabled={isSaving}
+                  onClick={() => onDelete(record.id)}
+                  className="btn btn-ghost text-red-600 flex-1"
+                >
+                  Delete
+                </button>
+              )}
+              <button onClick={onClose} className="btn btn-secondary flex-1">
+                Close
+              </button>
+            </div>
           </div>
         </motion.div>
       </motion.div>
@@ -402,54 +539,76 @@ function DetailModal({
 
 // ---- Main Component ----
 export default function Maintenance() {
-  const [loading, setLoading] = useState(true);
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === "admin";
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("all");
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState(null);
-  const [records, setRecords] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
   const [sortField, setSortField] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setRecords([...maintenanceRecords]);
-      setLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, []);
+  const {
+    data: records = [],
+    isLoading: recordsLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["maintenance"],
+    queryFn: () => maintenanceService.listRecords(),
+  });
+  const { data: items = [], isLoading: itemsLoading } = useQuery({
+    queryKey: ["items", { limit: 1000 }],
+    queryFn: () => itemService.listItems({ limit: 1000 }),
+  });
+  // Listing users is admin-only; technicians are only needed for scheduling.
+  const { data: technicians = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => userService.listUsers({ limit: 500 }),
+    enabled: isAdmin,
+  });
+  const loading = recordsLoading || itemsLoading;
+  const selectedRecord = records.find((r) => r.id === selectedId) || null;
 
-  // Derived data
-  const itemMap = useMemo(() => {
-    const map = {};
-    items.forEach((item) => {
-      map[item.id] = item;
-    });
-    return map;
-  }, []);
+  const onMutationError = (err) => toast.error(err.message || "Something went wrong");
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["maintenance"] });
 
-  const userMap = useMemo(() => {
-    const map = {};
-    users.forEach((user) => {
-      map[user.id] = user;
-    });
-    return map;
-  }, []);
-
-  const getItemName = (itemId) =>
-    itemMap[itemId]?.name || itemId || "Unknown Item";
-  const getTechnicianName = (techId) =>
-    userMap[techId]?.name || techId || "Unassigned";
+  const createMutation = useMutation({
+    mutationFn: (body) => maintenanceService.createRecord(body),
+    onSuccess: () => {
+      refresh();
+      setShowScheduleModal(false);
+      toast.success("Maintenance scheduled successfully");
+    },
+    onError: onMutationError,
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }) => maintenanceService.updateRecord(id, body),
+    onSuccess: (updated) => {
+      refresh();
+      toast.success(`Marked as ${STATUS_CONFIG[updated.status]?.label || updated.status}`);
+    },
+    onError: onMutationError,
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id) => maintenanceService.deleteRecord(id),
+    onSuccess: () => {
+      refresh();
+      setSelectedId(null);
+      toast.success("Maintenance record deleted");
+    },
+    onError: onMutationError,
+  });
 
   const stats = useMemo(() => {
     const total = items.length;
     const inProgress = records.filter((r) => r.status === "in_progress").length;
-    const scheduled = records.filter(
-      (r) => r.status === "scheduled" || r.status === "calibration_due",
-    ).length;
+    const scheduled = records.filter((r) => r.status === "scheduled").length;
     const now = new Date();
     const thisMonth = records.filter((r) => {
-      if (r.status !== "completed") return false;
-      const d = new Date(r.date);
+      if (r.status !== "completed" || !r.completed_at) return false;
+      const d = new Date(r.completed_at);
       return (
         d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
       );
@@ -467,21 +626,19 @@ export default function Maintenance() {
       }
     }
     filtered.sort((a, b) => {
-      const aVal =
+      const value = (r) =>
         sortField === "date"
-          ? new Date(a[sortField]).getTime()
-          : a[sortField] || 0;
-      const bVal =
-        sortField === "date"
-          ? new Date(b[sortField]).getTime()
-          : b[sortField] || 0;
+          ? new Date(r.scheduled_date).getTime()
+          : Number(r[sortField]) || 0;
+      const aVal = value(a);
+      const bVal = value(b);
       return sortDir === "asc" ? aVal - bVal : bVal - aVal;
     });
     return filtered;
   }, [records, activeTab, sortField, sortDir]);
 
-  const handleSchedule = (newRecord) => {
-    setRecords((prev) => [newRecord, ...prev]);
+  const handleDelete = (id) => {
+    if (window.confirm("Delete this maintenance record?")) deleteMutation.mutate(id);
   };
 
   const handleSort = (field) => {
@@ -529,6 +686,25 @@ export default function Maintenance() {
     );
   }
 
+  if (isError) {
+    return (
+      <PageTransition>
+        <div className="page-container">
+          <div className="card flex flex-col items-center py-16 text-center">
+            <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
+            <h3 className="text-lg font-medium text-gray-900">
+              Failed to load maintenance records
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">{error?.message}</p>
+            <button onClick={() => refetch()} className="btn btn-primary mt-4">
+              Retry
+            </button>
+          </div>
+        </div>
+      </PageTransition>
+    );
+  }
+
   return (
     <PageTransition>
       <div className="page-container space-y-6">
@@ -540,13 +716,15 @@ export default function Maintenance() {
               Track equipment maintenance, calibrations, and repairs
             </p>
           </div>
-          <button
-            onClick={() => setShowScheduleModal(true)}
-            className="btn btn-primary"
-          >
-            <Plus className="h-4 w-4" />
-            Schedule Maintenance
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowScheduleModal(true)}
+              className="btn btn-primary"
+            >
+              <Plus className="h-4 w-4" />
+              Schedule Maintenance
+            </button>
+          )}
         </div>
 
         {/* Stat Cards */}
@@ -619,16 +797,18 @@ export default function Maintenance() {
               </h3>
               <p className="text-sm text-gray-500 text-center max-w-sm">
                 {activeTab === "all"
-                  ? "No maintenance records yet. Schedule your first maintenance."
+                  ? "No maintenance records yet."
                   : `No ${activeTab.replace("_", " ")} records found.`}
               </p>
-              <button
-                onClick={() => setShowScheduleModal(true)}
-                className="btn btn-primary mt-4"
-              >
-                <Plus className="h-4 w-4" />
-                Schedule Maintenance
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowScheduleModal(true)}
+                  className="btn btn-primary mt-4"
+                >
+                  <Plus className="h-4 w-4" />
+                  Schedule Maintenance
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -705,7 +885,7 @@ export default function Maintenance() {
                         TYPE_ICONS[record.type] || TYPE_ICONS.repair;
                       const TypeIconComp = typeInfo.icon;
                       const statusInfo =
-                        STATUS_CONFIG[record.status] || STATUS_CONFIG.scheduled;
+                        STATUS_CONFIG[displayStatus(record)] || STATUS_CONFIG.scheduled;
 
                       return (
                         <motion.tr
@@ -713,7 +893,7 @@ export default function Maintenance() {
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: idx * 0.03, duration: 0.2 }}
-                          onClick={() => setSelectedRecord(record)}
+                          onClick={() => setSelectedId(record.id)}
                           className="cursor-pointer hover:bg-gray-50/50 transition-colors"
                         >
                           <td className="px-6 py-4">
@@ -723,10 +903,10 @@ export default function Maintenance() {
                               </div>
                               <div>
                                 <p className="text-sm font-medium text-gray-900">
-                                  {getItemName(record.itemId)}
+                                  {record.item_name || `Item #${record.item_id}`}
                                 </p>
                                 <p className="text-xs text-gray-400">
-                                  {record.itemId}
+                                  #{record.item_id}
                                 </p>
                               </div>
                             </div>
@@ -749,13 +929,13 @@ export default function Maintenance() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">
-                            {formatDate(record.date)}
+                            {formatDate(record.scheduled_date)}
                           </td>
                           <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                            {formatCurrency(record.cost)}
+                            {money(record.cost)}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">
-                            {getTechnicianName(record.technicianId)}
+                            {record.technician_name || "Unassigned"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px]">
                             {truncate(record.notes || "—", 50)}
@@ -774,16 +954,20 @@ export default function Maintenance() {
         <ScheduleModal
           isOpen={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
-          onSchedule={handleSchedule}
+          onSchedule={(body) => createMutation.mutate(body)}
           itemsList={items}
+          technicians={technicians.filter((u) => u.is_active)}
+          isSubmitting={createMutation.isPending}
         />
 
         <DetailModal
           record={selectedRecord}
           isOpen={!!selectedRecord}
-          onClose={() => setSelectedRecord(null)}
-          getItemName={getItemName}
-          getTechnicianName={getTechnicianName}
+          onClose={() => setSelectedId(null)}
+          isAdmin={isAdmin}
+          onUpdate={(id, body) => updateMutation.mutate({ id, body })}
+          onDelete={handleDelete}
+          isSaving={updateMutation.isPending || deleteMutation.isPending}
         />
       </div>
     </PageTransition>
