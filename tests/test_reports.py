@@ -216,3 +216,48 @@ def test_non_admin_sees_only_own_records(client, auth_header, user_auth_header, 
     body = [row for row in rows if row and row[0].isdigit()]
     assert len(body) == 1
     assert body[0][0] == str(user_borrow.json()["id"])
+
+
+def _overdue_borrow(client, headers, item_id: int) -> int:
+    due = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    resp = client.post(
+        "/api/borrow", json={"item_id": item_id, "quantity": 1, "due_date": due},
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
+def test_maintenance_report_hides_other_users_overdue(
+    client, auth_header, user_auth_header, seeded_item
+):
+    """Non-admins must only see their own overdue borrows (names of others leak otherwise)."""
+    admin_id = _overdue_borrow(client, auth_header, seeded_item["id"])
+    user_id = _overdue_borrow(client, user_auth_header, seeded_item["id"])
+    approve = client.post(f"/api/borrow/{user_id}/approve", headers=auth_header)
+    assert approve.status_code == 200
+
+    def overdue_ids(headers) -> set[str]:
+        rows = _csv_rows(_get_report(client, headers, "maintenance").content)
+        return {row[1] for row in rows if row and row[0] == "Overdue Borrow"}
+
+    assert overdue_ids(user_auth_header) == {str(user_id)}
+    assert overdue_ids(auth_header) == {str(admin_id), str(user_id)}
+
+
+def test_usage_report_ignores_pending_requests(client, user_auth_header, seeded_item):
+    """A pending (unapproved) request is not a loan — must not count as usage."""
+    resp = client.post(
+        "/api/borrow", json={"item_id": seeded_item["id"], "quantity": 1},
+        headers=user_auth_header,
+    )
+    assert resp.json()["status"] == "pending"
+    cells = _flat_cells(_get_report(client, user_auth_header, "usage").content)
+    assert seeded_item["name"] not in cells
+
+
+def test_leaderboard_does_not_expose_emails(client, auth_header, user_auth_header, seeded_borrow):
+    resp = client.get("/api/stats/leaderboard", headers=user_auth_header)
+    assert resp.status_code == 200
+    assert resp.json(), "admin's borrow should appear on the board"
+    assert all("email" not in entry for entry in resp.json())

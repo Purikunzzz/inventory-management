@@ -24,6 +24,7 @@ from app.models.borrow import BorrowRecord, BorrowStatus
 from app.models.item import Item
 from app.models.location import Location
 from app.models.user import User, UserRoleEnum
+from app.services.stats_service import _REAL_LOANS
 from app.schemas.reports import ReportFormatEnum, ReportTypeEnum
 
 FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
@@ -162,7 +163,12 @@ def _usage_data(db: Session, user: User, start: date, end: date) -> ReportData:
             func.coalesce(func.sum(BorrowRecord.quantity), 0).label("total_qty"),
         )
         .join(BorrowRecord, BorrowRecord.item_id == Item.id)
-        .filter(BorrowRecord.borrowed_at >= start_dt, BorrowRecord.borrowed_at <= end_dt)
+        .filter(
+            BorrowRecord.borrowed_at >= start_dt,
+            BorrowRecord.borrowed_at <= end_dt,
+            # Same rule as Analytics: pending/rejected requests are not real loans.
+            BorrowRecord.status.in_(_REAL_LOANS),
+        )
     )
     if user.role != UserRoleEnum.admin:
         query = query.filter(BorrowRecord.user_id == user.id)
@@ -186,8 +192,8 @@ def _usage_data(db: Session, user: User, start: date, end: date) -> ReportData:
     )
 
 
-def _maintenance_data(db: Session) -> ReportData:
-    """Items needing attention: low stock + borrows currently overdue."""
+def _maintenance_data(db: Session, user: User) -> ReportData:
+    """Items needing attention: low stock + overdue borrows (own overdue for non-admins)."""
     low_stock = (
         db.query(Item)
         .filter(Item.is_active.is_(True), Item.available_quantity <= Item.low_stock_threshold)
@@ -204,9 +210,10 @@ def _maintenance_data(db: Session) -> ReportData:
             BorrowRecord.due_date.isnot(None),
             BorrowRecord.due_date < now,
         )
-        .order_by(BorrowRecord.due_date)
-        .all()
     )
+    if user.role != UserRoleEnum.admin:
+        overdue = overdue.filter(BorrowRecord.user_id == user.id)
+    overdue = overdue.order_by(BorrowRecord.due_date).all()
     rows = [
         ["Low Stock", item.id, item.name, f"Available {item.available_quantity} <= threshold {item.low_stock_threshold}"]
         for item in low_stock
@@ -302,7 +309,7 @@ def _financial_data(db: Session) -> ReportData:
 _BUILDERS = {
     ReportTypeEnum.inventory: lambda db, user, s, e: _inventory_data(db),
     ReportTypeEnum.borrowing: _borrowing_data,
-    ReportTypeEnum.maintenance: lambda db, user, s, e: _maintenance_data(db),
+    ReportTypeEnum.maintenance: lambda db, user, s, e: _maintenance_data(db, user),
     ReportTypeEnum.damage: _damage_data,
     ReportTypeEnum.usage: _usage_data,
     ReportTypeEnum.financial: lambda db, user, s, e: _financial_data(db),
