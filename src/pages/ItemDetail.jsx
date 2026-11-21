@@ -41,6 +41,7 @@ import {
 import { itemService } from "../services/itemService";
 import { locationService } from "../services/locationService";
 import { borrowService } from "../services/borrowService";
+import { maintenanceService } from "../services/maintenanceService";
 
 function Skeleton({ className }) {
   return <div className={cn("skeleton", className)} />;
@@ -133,6 +134,12 @@ export default function ItemDetail() {
     enabled: !!id,
   });
 
+  const { data: maintenanceRecords = [] } = useQuery({
+    queryKey: ["maintenance", { item_id: id }],
+    queryFn: () => maintenanceService.listRecords({ item_id: id }),
+    enabled: !!id,
+  });
+
   const { data: relatedApiItems = [] } = useQuery({
     queryKey: ["items", "category", enrichedItem?.category],
     queryFn: () =>
@@ -215,7 +222,14 @@ export default function ItemDetail() {
     borrowDate: txn.borrowed_at,
   }));
 
-  const maintenanceHistory = [];
+  const maintenanceHistory = maintenanceRecords
+    .filter((r) => r.status !== "cancelled")
+    .map((r) => ({
+      ...r,
+      date: r.completed_at || r.scheduled_date,
+      technician: r.technician_name || "Unassigned",
+      notes: r.notes || `${r.status.replace("_", " ")}`,
+    }));
 
   // `id` comes from useParams() as a string, `i.id` from the API as a
   // number — compare as strings so the current item is actually excluded
@@ -461,7 +475,7 @@ export default function ItemDetail() {
                 <AlertTriangle className="h-4 w-4" /> Report Issue
               </button>
               <button
-                onClick={() => toast.success("Maintenance request created")}
+                onClick={() => navigate("/maintenance")}
                 className="btn btn-outline text-sm"
               >
                 <Wrench className="h-4 w-4" /> Maintenance
@@ -660,7 +674,7 @@ export default function ItemDetail() {
                             </span>
                             {(entry.cost || 0) > 0 && (
                               <span className="text-[10px] font-medium text-gray-600">
-                                {formatCurrency(entry.cost)}
+                                {formatCurrency(entry.cost, "THB")}
                               </span>
                             )}
                           </div>

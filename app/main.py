@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.borrow import router as borrow_router
 from app.api.items import router as items_router
 from app.api.locations import router as locations_router
+from app.api.maintenance import router as maintenance_router
 from app.api.reports import router as reports_router
 from app.api.stats import router as stats_router
 from app.api.users import router as users_router
@@ -131,6 +132,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(items_router, prefix="/api")
 app.include_router(locations_router, prefix="/api")
+app.include_router(maintenance_router, prefix="/api")
 app.include_router(borrow_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")

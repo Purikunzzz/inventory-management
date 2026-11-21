@@ -38,7 +38,7 @@ core/         → auth, JWT, security helpers
 - Soft delete only: `is_active=False` (items, users, locations); borrow_records never deleted
 
 ## Domain names (use exactly)
-`Item` · `BorrowRecord` · `User` · `Location` · `BorrowStatus` · `UserRoleEnum`
+`Item` · `BorrowRecord` · `User` · `Location` · `MaintenanceRecord` · `BorrowStatus` · `MaintenanceStatus` · `MaintenanceType` · `UserRoleEnum`
 
 ## API — base `/api/`
 | Prefix | File | Auth guard |
@@ -47,7 +47,8 @@ core/         → auth, JWT, security helpers
 | `/items` | api/items.py | `get_current_user`; write/delete → `require_admin` |
 | `/locations` | api/locations.py | `get_current_user`; write/delete → `require_admin` |
 | `/borrow`, `/return`, `/transactions` | api/borrow.py | `get_current_user` |
-| `/users` | api/users.py | `PATCH /users/me` → `get_current_user`; others → `require_admin` |
+| `/maintenance` | api/maintenance.py | `get_current_user`; write/delete → `require_admin` |
+| `/users` | api/users.py | `PATCH /users/me`, `PATCH /users/me/password` → `get_current_user`; others → `require_admin` |
 | `/stats/*` | api/stats.py | `get_current_user` |
 | `/reports/{type}` | api/reports.py | `get_current_user` |
 
@@ -73,10 +74,15 @@ Pagination: `?skip=0&limit=100`.
 `id PK | user_id FK idx | item_id FK idx | quantity default 1 | status Enum(pending,borrowed,returned,rejected) idx | borrowed_at | due_date NULL | returned_at NULL | note NULL | reviewed_by FK NULL | reviewed_at NULL | review_note NULL`
 - `due_date` is set by frontend on borrow; used for overdue detection
 
+### maintenance_records
+`id PK | item_id FK idx | type Enum(repair,calibration,replacement,inspection) | status Enum(scheduled,in_progress,completed,cancelled) idx | scheduled_date Date | completed_at NULL | next_due Date NULL | cost Numeric(10,2) THB default 0 | notes NULL | technician_id FK users NULL | created_by FK users | is_active default True | created_at | updated_at`
+- New table → `create_all` creates it on startup (no manual ALTER needed)
+
 ### Enums
 ```python
 UserRoleEnum: admin | user        # app/models/user.py
 BorrowStatus: pending | borrowed | returned | rejected  # app/models/borrow.py
+MaintenanceStatus: scheduled | in_progress | completed | cancelled  # app/models/maintenance.py
 ```
 
 ## Key service logic
@@ -97,6 +103,11 @@ BorrowStatus: pending | borrowed | returned | rejected  # app/models/borrow.py
 ### item_service
 - `create_item` → `available_quantity = total_quantity` at creation
 - `update_item` → if `total_quantity` changes, shift `available_quantity` by same delta; 400 if result < 0
+
+### maintenance_service
+- `create_record` → 404 if item inactive/missing or technician missing; status starts `scheduled`
+- `update_record` → completed/cancelled are final (409 on status change); `completed` stamps `completed_at`; other fields stay editable
+- `list_records(status_filter, item_id)`; responses include `item_name`, `technician_name`; soft delete
 
 ### stats_service
 - `summary(db)` → total_items, total_users, active_borrows, low_stock_items counts
@@ -158,6 +169,7 @@ src/
     utils.js         — cn(), formatDate(), formatRelative(), getStatusColor(), getConditionColor(), truncate()
   hooks/
     useAuth.jsx      — AuthContext; stores token+user in localStorage("lab_token","lab_currentUser")
+    useNotifications.js — Header bell: derived from /transactions (+ low-stock, overdue maintenance for admins); polls 60s
   services/
     authService.js   — googleLogin(), emailLogin()
     itemService.js   — listItems(), getItem(), createItem(), updateItem(), deleteItem()
@@ -166,7 +178,8 @@ src/
     statsService.js  — getSummary(), getItemUsage(), getStockMovement(), getLowStock(),
                        getLeaderboard(), getRecommendations()
     reportService.js — download(reportType, format, {startDate, endDate}) → blob download
-    userService.js   — listUsers(), getUser(), updateMe(), createUser(), updateUser(), deleteUser()
+    userService.js   — listUsers(), getUser(), updateMe(), changePassword(), createUser(), updateUser(), deleteUser()
+    maintenanceService.js — listRecords(), getRecord(), createRecord(), updateRecord(), deleteRecord()
   pages/
     Login, Dashboard, Inventory, ItemDetail, BorrowReturn, QrScanner,
     Locations, Analytics, Maintenance, Recommendations, Leaderboard,
@@ -202,6 +215,7 @@ src/
 | `lab_theme` | Selected theme ID (no backend) |
 | `lab_fontsize` | Selected font size (no backend) |
 | `lab_recent_reports` | Reports generated this browser (last 10, no backend) |
+| `lab_notifications_read` | IDs of header notifications marked read (no backend) |
 
 ## Routes
 `/ → Dashboard | /inventory → Inventory | /inventory/:id → ItemDetail | /borrow → BorrowReturn | /qr-scanner | /locations | /analytics | /maintenance | /recommendations | /leaderboard | /reports | /admin (admin only) | /settings`
@@ -211,7 +225,9 @@ src/
 |------|---------------|-------------|
 | Dashboard | GET /stats/summary, /stats/low-stock, /stats/stock-movement, /transactions | Real API |
 | Inventory | GET /items, POST /items, PATCH /items/{id}, DELETE /items/{id} | Real API |
-| ItemDetail | GET /items/{id}, /transactions?item_id= | Real API |
+| ItemDetail | GET /items/{id}, /transactions?item_id=, /maintenance?item_id= | Real API |
+| Maintenance | GET/POST /maintenance, PATCH/DELETE /maintenance/{id}, GET /items, GET /users (admin) | Real API |
+| Header notifications | GET /transactions, /stats/low-stock, /maintenance (admin) | Real API (read state in localStorage) |
 | BorrowReturn | POST /borrow, POST /return, GET /transactions, GET /items | Real API |
 | Locations | GET /locations, POST /locations, PATCH, DELETE | Real API |
 | Analytics | GET /stats/summary, /stats/item-usage, /stats/stock-movement, /stats/low-stock | Real API |
@@ -220,7 +236,7 @@ src/
 | **Leaderboard** | **GET /stats/leaderboard** | **Real API** |
 | **Recommendations** | **GET /stats/recommendations** | **Real API** |
 | **Settings → Profile** | **PATCH /users/me** | **Real API** |
-| **Settings → Security** | **PATCH /users/{id}** (password) | **Real API** |
+| **Settings → Security** | **PATCH /users/me/password** | **Real API** |
 | Settings → Notifications | — | localStorage only |
 | Settings → Appearance | — | localStorage only |
 

@@ -45,10 +45,10 @@ export function formatRelative(date) {
   return formatDate(date)
 }
 
-export function formatCurrency(value) {
+export function formatCurrency(value, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 0,
   }).format(value)
 }
