@@ -127,7 +127,10 @@ def low_stock(db: Session) -> list[LowStockOut]:
 
 
 def leaderboard(db: Session, limit: int = 10) -> list[dict[str, Any]]:
-    """Top users ranked by total borrow count."""
+    """Top users ranked by total borrow count.
+
+    Visible to every logged-in user, so emails are deliberately not returned.
+    """
     rows = (
         db.query(
             User.id,
@@ -149,7 +152,6 @@ def leaderboard(db: Session, limit: int = 10) -> list[dict[str, Any]]:
             "rank": i + 1,
             "user_id": r.id,
             "name": r.full_name or r.email.split("@")[0],
-            "email": r.email,
             "department": r.department or "Unknown",
             "borrow_count": int(r.borrow_count),
             "total_quantity": int(r.total_quantity),
