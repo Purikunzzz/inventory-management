@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     full_name: Optional[str] = None
     department: Optional[str] = None
     role: UserRole
+    auth_provider: str = "email"
     is_active: bool
     created_at: datetime
 
@@ -57,3 +58,8 @@ class UpdateUser(BaseModel):
     password: Optional[str] = Field(default=None, min_length=6)
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)

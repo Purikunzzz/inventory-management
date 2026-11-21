@@ -5,7 +5,7 @@ from app.config import settings
 from app.core.google_auth import verify_google_token
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User, UserRoleEnum, detect_department
-from app.schemas.user import CreateUser, LoginRequest, LoginResponse, UpdateUser, UserOut
+from app.schemas.user import ChangePassword, CreateUser, LoginRequest, LoginResponse, UpdateUser, UserOut
 
 
 def _verify_credentials(db: Session, email: str, password: str) -> User:
@@ -139,6 +139,24 @@ def update_user(db: Session, user_id: int, body: UpdateUser) -> User:
     for field, value in data.items():
         setattr(user, field, value)
 
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def change_password(db: Session, user: User, body: ChangePassword) -> User:
+    """Change own password after verifying the current one. Google accounts have none."""
+    if user.password is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google accounts cannot change password here",
+        )
+    # 400 (not 401): the frontend treats 401 as an expired session and logs out.
+    if not verify_password(body.current_password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
+        )
+    user.password = hash_password(body.new_password)
     db.commit()
     db.refresh(user)
     return user

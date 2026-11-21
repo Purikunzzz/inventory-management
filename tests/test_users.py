@@ -123,3 +123,58 @@ class TestUsersCRUD:
         )
         ids = [u["id"] for u in full_resp.json()]
         assert normal_user.id in ids
+
+
+class TestChangeOwnPassword:
+    URL = "/api/users/me/password"
+
+    def _login(self, client, password: str) -> int:
+        return client.post(
+            "/api/auth/login", json={"email": "user@test.com", "password": password}
+        ).status_code
+
+    def test_user_changes_own_password(self, client, user_auth_header, normal_user):
+        """Regular user (non-admin) can change their password with the correct current one."""
+        resp = client.patch(
+            self.URL,
+            json={"current_password": "secret123", "new_password": "newpass789"},
+            headers=user_auth_header,
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["auth_provider"] == "email"
+        assert self._login(client, "newpass789") == status.HTTP_200_OK
+        assert self._login(client, "secret123") == status.HTTP_401_UNAUTHORIZED
+
+    def test_wrong_current_password_is_400_not_401(self, client, user_auth_header, normal_user):
+        """401 would make the frontend log the user out, so a wrong password must be 400."""
+        resp = client.patch(
+            self.URL,
+            json={"current_password": "wrong", "new_password": "newpass789"},
+            headers=user_auth_header,
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert self._login(client, "secret123") == status.HTTP_200_OK
+
+    def test_google_account_cannot_change_password(self, client, user_auth_header, normal_user, db):
+        normal_user.password = None
+        normal_user.auth_provider = "google"
+        db.commit()
+        resp = client.patch(
+            self.URL,
+            json={"current_password": "x", "new_password": "newpass789"},
+            headers=user_auth_header,
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_short_new_password_rejected(self, client, user_auth_header, normal_user):
+        resp = client.patch(
+            self.URL,
+            json={"current_password": "secret123", "new_password": "short"},
+            headers=user_auth_header,
+        )
+        assert resp.status_code == 422
+
+    def test_update_me_null_name_does_not_erase_name(self, client, user_auth_header, normal_user):
+        resp = client.patch("/api/users/me", json={"full_name": None}, headers=user_auth_header)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["full_name"] == "Test user"
