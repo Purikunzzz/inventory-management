@@ -37,6 +37,7 @@ import {
   getConditionColor,
   truncate,
   getPlaceholderImage,
+  localDateISO,
 } from "../lib/utils";
 import { useAuth } from "../hooks/useAuth";
 import { toast } from "sonner";
@@ -126,7 +127,8 @@ function BorrowTab({ currentUser, items, borrowMutation, preselectedItem }) {
         note: [purpose, course && `Course: ${course}`, professor && `Professor: ${professor}`]
           .filter(Boolean)
           .join(" | ") || null,
-        due_date: expectedReturn ? new Date(expectedReturn).toISOString() : null,
+        // "Return by <date>" = end of that day in the user's timezone.
+        due_date: expectedReturn ? new Date(`${expectedReturn}T23:59:59`).toISOString() : null,
       },
       {
         onSettled: () => {
@@ -308,7 +310,7 @@ function BorrowTab({ currentUser, items, borrowMutation, preselectedItem }) {
                 <DatePicker
                   value={expectedReturn}
                   onChange={setExpectedReturn}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={localDateISO()}
                   ariaLabel="Expected return date"
                 />
               </div>

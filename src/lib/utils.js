@@ -16,6 +16,13 @@ export function formatDate(date) {
   }).format(d)
 }
 
+/** Today's (or the given date's) calendar date in the browser's timezone, as YYYY-MM-DD.
+ *  Use instead of toISOString().split("T")[0], which gives the UTC date (wrong before 07:00 in Thailand). */
+export function localDateISO(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export function formatDateTime(date) {
   if (!date) return '—'
   const d = new Date(date)

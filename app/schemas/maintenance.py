@@ -1,10 +1,11 @@
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from app.models.maintenance import MaintenanceStatus, MaintenanceType
+from app.schemas.types import UtcDateTime
 
 
 class MaintenanceCreate(BaseModel):
@@ -34,13 +35,13 @@ class MaintenanceOut(BaseModel):
     type: MaintenanceType
     status: MaintenanceStatus
     scheduled_date: date
-    completed_at: Optional[datetime] = None
+    completed_at: Optional[UtcDateTime] = None
     next_due: Optional[date] = None
     cost: float
     notes: Optional[str] = None
     technician_id: Optional[int] = None
     technician_name: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
 
     model_config = {"from_attributes": True}

@@ -28,6 +28,7 @@ import {
   formatDate,
   formatRelative,
   formatCurrency,
+  localDateISO,
   getStatusColor,
   getConditionColor,
   truncate,
@@ -39,7 +40,7 @@ import { useAuth } from "../hooks/useAuth";
 
 const CURRENCY = "THB";
 const money = (v) => formatCurrency(Number(v) || 0, CURRENCY);
-const todayISO = () => new Date().toISOString().split("T")[0];
+const todayISO = () => localDateISO();
 
 /** A scheduled job whose date has passed is shown as Overdue. */
 function displayStatus(record) {
