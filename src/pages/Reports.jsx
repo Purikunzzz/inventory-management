@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import PageTransition from "../components/PageTransition";
 import DatePicker from "../components/DatePicker";
-import { cn, formatDate } from "../lib/utils";
+import { cn, formatDate, localDateISO } from "../lib/utils";
 import { useAuth } from "../hooks/useAuth";
 import { statsService } from "../services/statsService";
 import { reportService } from "../services/reportService";
@@ -247,10 +247,10 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
-    return d.toISOString().split("T")[0];
+    return localDateISO(d);
   });
   const [endDate, setEndDate] = useState(
-    () => new Date().toISOString().split("T")[0],
+    () => localDateISO(),
   );
   const [generatingId, setGeneratingId] = useState(null);
   const [selectedExportFormat, setSelectedExportFormat] = useState("pdf");

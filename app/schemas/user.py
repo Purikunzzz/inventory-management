@@ -1,8 +1,9 @@
-from datetime import datetime
 from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
+
+from app.schemas.types import UtcDateTime
 
 
 class UserRole(str, Enum):
@@ -34,7 +35,7 @@ class UserOut(BaseModel):
     role: UserRole
     auth_provider: str = "email"
     is_active: bool
-    created_at: datetime
+    created_at: UtcDateTime
 
     model_config = {"from_attributes": True}
 

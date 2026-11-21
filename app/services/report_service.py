@@ -10,7 +10,7 @@ system actually stores (no maintenance log, damage log or pricing exists):
 import csv
 import io
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fpdf import FPDF, FontFace
@@ -20,6 +20,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timeutil import local_day_bounds_utc, local_today, to_local
 from app.models.borrow import BorrowRecord, BorrowStatus
 from app.models.item import Item
 from app.models.location import Location
@@ -51,7 +52,7 @@ def _resolve_period(
     start_date: date | None, end_date: date | None
 ) -> tuple[date, date]:
     """Default to the last N days when the caller omits the range."""
-    end = end_date or datetime.now(timezone.utc).date()
+    end = end_date or local_today()
     start = start_date or (end - timedelta(days=DEFAULT_PERIOD_DAYS))
     if start > end:
         start, end = end, start
@@ -59,14 +60,13 @@ def _resolve_period(
 
 
 def _utc_bounds(start: date, end: date) -> tuple[datetime, datetime]:
-    """Inclusive day bounds as naive UTC datetimes (columns store UTC wall time)."""
-    start_dt = datetime.combine(start, time.min, tzinfo=timezone.utc).replace(tzinfo=None)
-    end_dt = datetime.combine(end, time.max, tzinfo=timezone.utc).replace(tzinfo=None)
-    return start_dt, end_dt
+    """Inclusive local (APP_TIMEZONE) day bounds as naive UTC, matching the DB columns."""
+    return local_day_bounds_utc(start, end)
 
 
 def _fmt(value: datetime | None) -> str:
-    return value.strftime("%Y-%m-%d %H:%M") if value else "-"
+    """Stored UTC → local wall time for printed reports."""
+    return to_local(value).strftime("%Y-%m-%d %H:%M") if value else "-"
 
 
 # ── Report builders (one per report type) ─────────────────────────────────
@@ -419,7 +419,7 @@ def build_report(
     """Render a report → (filename, media_type, file bytes)."""
     start, end = _resolve_period(start_date, end_date)
     data = _BUILDERS[report_type](db, user, start, end)
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    generated_at = to_local(datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M %Z")
 
     renderers = {
         ReportFormatEnum.csv: _render_csv,

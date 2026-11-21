@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
 from typing import Optional
 from enum import Enum
+
+from app.schemas.types import UtcDateTime, UtcDateTimeIn
 
 
 class BorrowStatusEnum(str, Enum):
@@ -14,7 +15,7 @@ class BorrowStatusEnum(str, Enum):
 class BorrowRequest(BaseModel):
     item_id: int
     quantity: int = Field(default=1, ge=1)
-    due_date: Optional[datetime] = None
+    due_date: Optional[UtcDateTimeIn] = None
     note: Optional[str] = Field(default=None, max_length=500)
 
 
@@ -33,12 +34,12 @@ class BorrowOut(BaseModel):
     item_id: int
     quantity: int
     status: BorrowStatusEnum
-    borrowed_at: datetime
-    due_date: Optional[datetime] = None
-    returned_at: Optional[datetime] = None
+    borrowed_at: UtcDateTime
+    due_date: Optional[UtcDateTime] = None
+    returned_at: Optional[UtcDateTime] = None
     note: Optional[str] = None
     reviewed_by: Optional[int] = None
-    reviewed_at: Optional[datetime] = None
+    reviewed_at: Optional[UtcDateTime] = None
     review_note: Optional[str] = None
 
     model_config = {"from_attributes": True}

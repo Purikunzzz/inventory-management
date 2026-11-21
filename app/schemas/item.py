@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
 from typing import Optional
+
+from app.schemas.types import UtcDateTime
 
 
 class ItemBase(BaseModel):
@@ -39,7 +40,7 @@ class ItemOut(BaseModel):
     location_id: Optional[int] = None
     image_url: Optional[str] = None
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
 
     model_config = {"from_attributes": True}

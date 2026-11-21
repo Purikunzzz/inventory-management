@@ -4,7 +4,7 @@ import { borrowService } from "../services/borrowService";
 import { itemService } from "../services/itemService";
 import { statsService } from "../services/statsService";
 import { maintenanceService } from "../services/maintenanceService";
-import { formatRelative } from "../lib/utils";
+import { formatRelative, localDateISO } from "../lib/utils";
 
 /**
  * Header notifications derived from real data (no notifications table):
@@ -18,9 +18,8 @@ const MAX_SHOWN = 20;
 const REFRESH_MS = 60_000;
 const RECENT_REVIEW_DAYS = 14;
 
-// The API returns naive UTC timestamps (no "Z"); parse them as UTC.
-const parseUtc = (s) =>
-  s ? new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s}Z`) : null;
+// API timestamps carry a "Z" (UTC), so Date parses them correctly.
+const toDate = (s) => (s ? new Date(s) : null);
 
 function loadRead() {
   try {
@@ -37,8 +36,8 @@ function borrowNotifications(records, userId, itemName, now) {
   for (const r of records) {
     if (r.user_id !== userId) continue;
     const name = `${r.quantity} × ${itemName(r.item_id)}`;
-    const reviewedAt = parseUtc(r.reviewed_at);
-    const due = parseUtc(r.due_date);
+    const reviewedAt = toDate(r.reviewed_at);
+    const due = toDate(r.due_date);
     if (r.status === "borrowed" && due && due < now) {
       out.push({ id: `overdue-${r.id}`, title: "Return overdue", desc: `${name} was due back`, at: due, link: "/borrow" });
     }
@@ -58,7 +57,7 @@ function adminNotifications(pending, lowStock, maintenance, itemName, today) {
     id: `pending-${r.id}`,
     title: "Borrow request awaiting approval",
     desc: `${r.quantity} × ${itemName(r.item_id)}`,
-    at: parseUtc(r.borrowed_at),
+    at: toDate(r.borrowed_at),
     link: "/admin",
   }));
   for (const i of lowStock) {
@@ -131,7 +130,7 @@ export function useNotifications(currentUser) {
     const names = new Map(items.map((i) => [i.id, i.name]));
     const itemName = (id) => names.get(id) || `item #${id}`;
     const now = new Date();
-    const today = now.toISOString().split("T")[0];
+    const today = localDateISO(now);
     const all = [
       ...borrowNotifications(own, currentUser?.id, itemName, now),
       ...(isAdmin ? adminNotifications(pending, lowStock, maintenance, itemName, today) : []),

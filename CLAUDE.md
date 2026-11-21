@@ -18,6 +18,8 @@ SECRET_KEY=<random>
 GOOGLE_CLIENT_ID=<from GCP>
 ADMIN_EMAILS=email1@kmitl.ac.th,email2@kmitl.ac.th
 CORS_ORIGINS=http://localhost:5173,http://localhost:4173
+TRUSTED_PROXY_HOPS=1          # proxies appending X-Forwarded-For (0 local, 1 Render)
+APP_TIMEZONE=Asia/Bangkok     # report day boundaries + printed times
 ```
 
 ## Architecture (strict layers)
@@ -36,6 +38,7 @@ core/         → auth, JWT, security helpers
 - HTTP codes: 201 create, 204 delete, 200 all others, 422 auto by Pydantic
 - Errors always: `{"detail": "message"}`
 - Soft delete only: `is_active=False` (items, users, locations); borrow_records never deleted
+- Timestamps: DB stores naive UTC. Response schemas use `UtcDateTime` (→ JSON ends in `Z`); request datetimes use `UtcDateTimeIn` (any offset → naive UTC). Helpers in `core/timeutil.py`. Frontend: use `localDateISO()` for "today", never `toISOString().split("T")[0]`
 
 ## Domain names (use exactly)
 `Item` · `BorrowRecord` · `User` · `Location` · `MaintenanceRecord` · `BorrowStatus` · `MaintenanceStatus` · `MaintenanceType` · `UserRoleEnum`
