@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
+from app.core import rate_limit
 from app.database import Base
 from app.main import app
 from app.api.deps import get_db
@@ -27,6 +28,13 @@ def _fk_pragma(dbapi_connection, connection_record):
 
 
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit():
+    """Each test starts with fresh login quotas (all TestClient calls share one IP)."""
+    rate_limit.reset()
+    yield
 
 
 @pytest.fixture(autouse=True)
