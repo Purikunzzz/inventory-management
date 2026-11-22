@@ -20,6 +20,7 @@ ADMIN_EMAILS=email1@kmitl.ac.th,email2@kmitl.ac.th
 CORS_ORIGINS=http://localhost:5173,http://localhost:4173
 TRUSTED_PROXY_HOPS=1          # proxies appending X-Forwarded-For (0 local, 1 Render)
 APP_TIMEZONE=Asia/Bangkok     # report day boundaries + printed times
+CLOUDINARY_URL=cloudinary://<key>:<secret>@<cloud>   # item photo uploads (empty → upload returns 503)
 ```
 
 ## Architecture (strict layers)
@@ -47,7 +48,7 @@ core/         → auth, JWT, security helpers
 | Prefix | File | Auth guard |
 |--------|------|-----------|
 | `/auth` | api/auth.py | public |
-| `/items` | api/items.py | `get_current_user`; write/delete → `require_admin` |
+| `/items` | api/items.py | `get_current_user`; write/delete/`POST /items/{id}/image` → `require_admin` |
 | `/locations` | api/locations.py | `get_current_user`; write/delete → `require_admin` |
 | `/borrow`, `/return`, `/transactions` | api/borrow.py | `get_current_user` |
 | `/maintenance` | api/maintenance.py | `get_current_user`; write/delete → `require_admin` |
@@ -66,7 +67,7 @@ Pagination: `?skip=0&limit=100`.
 - `user.borrow_records` → BorrowRecord[]
 
 ### items
-`id PK | name idx | description NULL | category NULL idx | total_quantity | available_quantity | low_stock_threshold default 1 | location_id FK NULL | is_active default True | created_at | updated_at`
+`id PK | name idx | description NULL | category NULL idx | total_quantity | available_quantity | low_stock_threshold default 1 | location_id FK NULL | image_url NULL | is_active default True | created_at | updated_at`
 - `available_quantity` = shelf stock (decrements on borrow, increments on return)
 - low stock alert when `available_quantity <= low_stock_threshold`
 
@@ -106,6 +107,7 @@ MaintenanceStatus: scheduled | in_progress | completed | cancelled  # app/models
 ### item_service
 - `create_item` → `available_quantity = total_quantity` at creation
 - `update_item` → if `total_quantity` changes, shift `available_quantity` by same delta; 400 if result < 0
+- `set_item_image` → validates bytes (JPEG/PNG/WebP by magic bytes, ≤5 MB → 400/413), uploads via `image_storage.upload_item_image` (Cloudinary signed REST, public_id `item-{id}` overwritten), stores `secure_url`; 503 if unconfigured, 502 if Cloudinary fails
 
 ### maintenance_service
 - `create_record` → 404 if item inactive/missing or technician missing; status starts `scheduled`
@@ -175,7 +177,7 @@ src/
     useNotifications.js — Header bell: derived from /transactions (+ low-stock, overdue maintenance for admins); polls 60s
   services/
     authService.js   — googleLogin(), emailLogin()
-    itemService.js   — listItems(), getItem(), createItem(), updateItem(), deleteItem()
+    itemService.js   — listItems(), getItem(), createItem(), updateItem(), deleteItem(), uploadImage()
     borrowService.js — borrow(), returnItem(), listTransactions()
     locationService.js — listLocations(), createLocation(), updateLocation(), deleteLocation()
     statsService.js  — getSummary(), getItemUsage(), getStockMovement(), getLowStock(),
@@ -188,7 +190,8 @@ src/
     Locations, Analytics, Maintenance, Recommendations, Leaderboard,
     Reports, Admin, Settings
   components/
-    Sidebar, Header, CommandPalette, PageTransition
+    Sidebar, Header, CommandPalette, PageTransition, AddItemModal, EditItemModal,
+    ItemImageInput (upload-or-link photo picker used by both modals)
     ui/index.jsx — Skeleton, EmptyState, ErrorState, ConfirmDialog, StatCard, Badge, TableSkeleton
   layouts/
     AuthLayout, DashboardLayout
@@ -227,7 +230,7 @@ src/
 | Page | Endpoints used | Data source |
 |------|---------------|-------------|
 | Dashboard | GET /stats/summary, /stats/low-stock, /stats/stock-movement, /transactions | Real API |
-| Inventory | GET /items, POST /items, PATCH /items/{id}, DELETE /items/{id} | Real API |
+| Inventory | GET /items, POST /items, PATCH /items/{id}, POST /items/{id}/image, DELETE /items/{id} | Real API |
 | ItemDetail | GET /items/{id}, /transactions?item_id=, /maintenance?item_id= | Real API |
 | Maintenance | GET/POST /maintenance, PATCH/DELETE /maintenance/{id}, GET /items, GET /users (admin) | Real API |
 | Header notifications | GET /transactions, /stats/low-stock, /maintenance (admin) | Real API (read state in localStorage) |
@@ -260,6 +263,8 @@ npm run preview
 - CSV: `Name→name, Description→description, Total Quantity→total_quantity, Quantity Available→available_quantity`
 
 ## Image handling
-- Items from API have no image field — frontend synthesizes: `https://picsum.photos/seed/${item.id}/400/300`
-- Always use fallback: `item.image || \`https://picsum.photos/seed/${item.id}/80/80\``
+- `item.image_url` (nullable) is the photo; render `item.image_url || getPlaceholderImage(item)` (inline SVG by category, no network — never use an external placeholder host; see README)
+- Admins upload in Add/Edit item (file → Cloudinary via `itemService.uploadImage`, or paste a link). Add creates the item first, then uploads
+- `apiClient.upload(endpoint, formData)` sends multipart (no JSON Content-Type)
+- Backup: `python -m scripts.export_images` → commit `images.csv`; `apply_images()` restores missing URLs on startup
 - User avatars: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=7C8D7D&color=fff`

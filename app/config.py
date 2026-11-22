@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     TRUSTED_PROXY_HOPS: int = 1
     # Local timezone for report day boundaries / printed timestamps.
     APP_TIMEZONE: str = "Asia/Bangkok"
+    # cloudinary://<api_key>:<api_secret>@<cloud_name> — enables photo uploads.
+    CLOUDINARY_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
