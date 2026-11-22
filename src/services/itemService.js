@@ -28,4 +28,10 @@ export const itemService = {
   deleteItem(id) {
     return apiClient.delete(`/items/${id}`)
   },
+
+  uploadImage(id, file) {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient.upload(`/items/${id}/image`, form)
+  },
 }

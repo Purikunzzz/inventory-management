@@ -7,6 +7,7 @@ import { itemService } from "../services/itemService";
 import { locationService } from "../services/locationService";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "../lib/utils";
+import ItemImageInput from "./ItemImageInput";
 
 /**
  * Edit an existing item — PATCH /items/{id}. Mirrors AddItemModal's layout
@@ -21,6 +22,7 @@ export default function EditItemModal({ open, item, onClose }) {
   const [lowStockThreshold, setLowStockThreshold] = useState(1);
   const [locationId, setLocationId] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState(null);
 
   const { data: locations = [] } = useQuery({
     queryKey: ["locations"],
@@ -38,18 +40,31 @@ export default function EditItemModal({ open, item, onClose }) {
     setLowStockThreshold(item.low_stock_threshold ?? 1);
     setLocationId(item.location_id ? String(item.location_id) : "");
     setImageUrl(item.image_url || "");
+    setImageFile(null);
   }, [item]);
 
+  function refreshItemQueries() {
+    queryClient.invalidateQueries({ queryKey: ["items"] });
+    queryClient.invalidateQueries({ queryKey: ["item"] });
+  }
+
   const updateMutation = useMutation({
-    mutationFn: (data) => itemService.updateItem(item.id, data),
+    mutationFn: async (data) => {
+      if (Object.keys(data).length > 0) await itemService.updateItem(item.id, data);
+      if (imageFile) await itemService.uploadImage(item.id, imageFile);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
+      refreshItemQueries();
       queryClient.invalidateQueries({ queryKey: ["stats-summary"] });
       queryClient.invalidateQueries({ queryKey: ["stats-lowstock"] });
       toast.success("Item updated successfully");
       onClose();
     },
-    onError: (err) => toast.error(err.message || "Failed to update item"),
+    onError: (err) => {
+      // Field edits may have saved before the photo upload failed.
+      refreshItemQueries();
+      toast.error(err.message || "Failed to update item");
+    },
   });
 
   function handleSubmit(e) {
@@ -68,10 +83,11 @@ export default function EditItemModal({ open, item, onClose }) {
     if (lowStockThreshold !== item.low_stock_threshold) data.low_stock_threshold = lowStockThreshold;
     const newLocationId = locationId ? parseInt(locationId) : null;
     if (newLocationId !== (item.location_id || null)) data.location_id = newLocationId;
+    // A chosen file replaces the photo, so the link field is ignored then.
     const newImageUrl = imageUrl.trim() || null;
-    if (newImageUrl !== (item.image_url || null)) data.image_url = newImageUrl;
+    if (!imageFile && newImageUrl !== (item.image_url || null)) data.image_url = newImageUrl;
 
-    if (Object.keys(data).length === 0) {
+    if (Object.keys(data).length === 0 && !imageFile) {
       toast.info("No changes to save");
       onClose();
       return;
@@ -167,16 +183,12 @@ export default function EditItemModal({ open, item, onClose }) {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="label">Image URL</label>
-              <input
-                type="url"
-                className="input"
-                placeholder="https://example.com/image.jpg"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-              />
-            </div>
+            <ItemImageInput
+              url={imageUrl}
+              onUrlChange={setImageUrl}
+              file={imageFile}
+              onFileChange={setImageFile}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">

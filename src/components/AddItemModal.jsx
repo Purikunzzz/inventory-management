@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { itemService } from "../services/itemService";
 import { locationService } from "../services/locationService";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "../lib/utils";
+import ItemImageInput from "./ItemImageInput";
 
 export default function AddItemModal({ open, onClose }) {
   const queryClient = useQueryClient();
@@ -17,6 +17,7 @@ export default function AddItemModal({ open, onClose }) {
   const [lowStockThreshold, setLowStockThreshold] = useState(1);
   const [locationId, setLocationId] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState(null);
 
   const { data: locations = [] } = useQuery({
     queryKey: ["locations"],
@@ -25,15 +26,29 @@ export default function AddItemModal({ open, onClose }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: itemService.createItem,
-    onSuccess: () => {
+    // Create first (the upload needs the item id), then attach the photo.
+    // A failed upload still leaves a usable item, so report it separately.
+    mutationFn: async (data) => {
+      const item = await itemService.createItem(data);
+      if (!imageFile) return { item };
+      try {
+        return { item: await itemService.uploadImage(item.id, imageFile) };
+      } catch (err) {
+        return { item, imageError: err };
+      }
+    },
+    onSuccess: ({ imageError }) => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       // Also refresh dashboard/admin stat cards (total item count, low-stock
       // list, etc.) so a newly created item is reflected without a full page
       // reload — this modal is reused from both Inventory and Admin.
       queryClient.invalidateQueries({ queryKey: ["stats-summary"] });
       queryClient.invalidateQueries({ queryKey: ["stats-lowstock"] });
-      toast.success("Item created successfully");
+      if (imageError) {
+        toast.warning(`Item created, but the photo upload failed: ${imageError.message}`);
+      } else {
+        toast.success("Item created successfully");
+      }
       resetForm();
       onClose();
     },
@@ -48,6 +63,7 @@ export default function AddItemModal({ open, onClose }) {
     setLowStockThreshold(1);
     setLocationId("");
     setImageUrl("");
+    setImageFile(null);
   }
 
   function handleSubmit(e) {
@@ -60,7 +76,7 @@ export default function AddItemModal({ open, onClose }) {
       total_quantity: totalQuantity,
       low_stock_threshold: lowStockThreshold,
       location_id: locationId ? parseInt(locationId) : null,
-      image_url: imageUrl.trim() || null,
+      image_url: imageFile ? null : imageUrl.trim() || null,
     });
   }
 
@@ -151,16 +167,12 @@ export default function AddItemModal({ open, onClose }) {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="label">Image URL</label>
-              <input
-                type="url"
-                className="input"
-                placeholder="https://example.com/image.jpg"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-              />
-            </div>
+            <ItemImageInput
+              url={imageUrl}
+              onUrlChange={setImageUrl}
+              file={imageFile}
+              onFileChange={setImageFile}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">

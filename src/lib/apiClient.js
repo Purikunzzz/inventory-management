@@ -10,8 +10,10 @@ function getToken() {
 
 async function request(endpoint, options = {}) {
   const token = getToken();
+  // FormData (file uploads) must let the browser set its own multipart boundary.
+  const isForm = options.body instanceof FormData;
   const headers = {
-    "Content-Type": "application/json",
+    ...(isForm ? {} : { "Content-Type": "application/json" }),
     ...options.headers,
   };
 
@@ -86,6 +88,9 @@ export const apiClient = {
   },
   delete(endpoint) {
     return request(endpoint, { method: "DELETE" });
+  },
+  upload(endpoint, formData) {
+    return request(endpoint, { method: "POST", body: formData });
   },
 };
 

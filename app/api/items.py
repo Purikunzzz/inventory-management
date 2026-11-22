@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, Response
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -6,6 +6,7 @@ from app.api.deps import get_db, get_current_user, require_admin
 from app.models.user import User
 from app.schemas.item import ItemCreate, ItemUpdate, ItemOut
 from app.services import item_service
+from app.services.image_storage import MAX_IMAGE_BYTES
 
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -60,6 +61,19 @@ def update_item(
     _: User = Depends(require_admin),
 ) -> ItemOut:
     return ItemOut.model_validate(item_service.update_item(db, item_id, body))
+
+
+@router.post("/{item_id}/image", response_model=ItemOut, status_code=status.HTTP_200_OK)
+async def upload_item_image(
+    item_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> ItemOut:
+    # Read one byte past the limit so oversize files are rejected without
+    # buffering an arbitrarily large upload.
+    data = await file.read(MAX_IMAGE_BYTES + 1)
+    return ItemOut.model_validate(item_service.set_item_image(db, item_id, data))
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

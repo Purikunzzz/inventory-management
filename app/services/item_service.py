@@ -5,6 +5,7 @@ from typing import Optional
 from app.models.item import Item
 from app.models.location import Location
 from app.schemas.item import ItemCreate, ItemUpdate
+from app.services import image_storage
 
 
 def list_items(
@@ -96,3 +97,13 @@ def soft_delete_item(db: Session, item_id: int) -> None:
     item = get_item(db, item_id)
     item.is_active = False
     db.commit()
+
+
+def set_item_image(db: Session, item_id: int, data: bytes) -> Item:
+    """Validate an uploaded photo, store it in Cloudinary, save its URL."""
+    item = get_item(db, item_id)
+    image_storage.validate_image(data)
+    item.image_url = image_storage.upload_item_image(item.id, data)
+    db.commit()
+    db.refresh(item)
+    return item
