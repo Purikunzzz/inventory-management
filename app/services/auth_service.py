@@ -119,9 +119,31 @@ def get_user(db: Session, user_id: int) -> User:
     return user
 
 
-def update_user(db: Session, user_id: int, body: UpdateUser) -> User:
+def _guard_self_lockout(actor_id: int | None, user_id: int, data: dict) -> None:
+    """Stop an admin from demoting or deactivating their own account.
+
+    Otherwise the last admin can lock everyone out of the admin console.
+    """
+    if actor_id is None or actor_id != user_id:
+        return
+    if data.get("role") not in (None, UserRoleEnum.admin, UserRoleEnum.admin.value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot remove your own admin role",
+        )
+    if data.get("is_active") is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account",
+        )
+
+
+def update_user(
+    db: Session, user_id: int, body: UpdateUser, actor_id: int | None = None
+) -> User:
     user = get_user(db, user_id)
     data = body.model_dump(exclude_unset=True)
+    _guard_self_lockout(actor_id, user_id, data)
 
     # Check email uniqueness if it's being changed.
     if "email" in data and data["email"] != user.email:
@@ -162,8 +184,13 @@ def change_password(db: Session, user: User, body: ChangePassword) -> User:
     return user
 
 
-def soft_delete_user(db: Session, user_id: int) -> None:
+def soft_delete_user(db: Session, user_id: int, actor_id: int | None = None) -> None:
     """Deactivate user — set is_active=False, never hard delete."""
     user = get_user(db, user_id)
+    if actor_id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
     user.is_active = False
     db.commit()

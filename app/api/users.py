@@ -72,9 +72,9 @@ def update_user(
     user_id: int,
     body: UpdateUser,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> UserOut:
-    user = auth_service.update_user(db, user_id, body)
+    user = auth_service.update_user(db, user_id, body, actor_id=admin.id)
     return UserOut.model_validate(user)
 
 
@@ -82,7 +82,7 @@ def update_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> Response:
-    auth_service.soft_delete_user(db, user_id)
+    auth_service.soft_delete_user(db, user_id, actor_id=admin.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
