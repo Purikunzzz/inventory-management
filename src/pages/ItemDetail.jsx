@@ -3,7 +3,6 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
-  Heart,
   Share2,
   Wrench,
   AlertTriangle,
@@ -39,6 +38,7 @@ import { itemService } from "../services/itemService";
 import { locationService } from "../services/locationService";
 import { borrowService } from "../services/borrowService";
 import { maintenanceService } from "../services/maintenanceService";
+import ReportIssueDialog from "../components/ReportIssueDialog";
 
 function Skeleton({ className }) {
   return <div className={cn("skeleton", className)} />;
@@ -104,7 +104,7 @@ export default function ItemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeImage, setActiveImage] = useState(0);
-  const [isFav, setIsFav] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [relatedScroll, setRelatedScroll] = useState(0);
 
   const {
@@ -145,6 +145,13 @@ export default function ItemDetail() {
       }),
     enabled: !!enrichedItem?.category,
   });
+
+  function handleShare() {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => toast.success("Link copied to clipboard"))
+      .catch(() => toast.error("Could not copy the link"));
+  }
 
   if (itemLoading) {
     return (
@@ -330,19 +337,7 @@ export default function ItemDetail() {
                 </h1>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
-                    onClick={() => setIsFav(!isFav)}
-                    className="btn btn-ghost p-2"
-                    aria-label="Favorite"
-                  >
-                    <Heart
-                      className={cn(
-                        "h-5 w-5",
-                        isFav ? "fill-red-400 text-red-400" : "text-gray-400",
-                      )}
-                    />
-                  </button>
-                  <button
-                    onClick={() => toast.success("Link copied to clipboard")}
+                    onClick={handleShare}
                     className="btn btn-ghost p-2"
                     aria-label="Share"
                   >
@@ -446,26 +441,20 @@ export default function ItemDetail() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() =>
-                  toast.success(`${item.name} added to borrow list`)
+                  navigate("/borrow", { state: { selectedItem: apiItem } })
                 }
                 className="btn btn-primary text-sm"
               >
                 <ArrowLeftRight className="h-4 w-4" /> Borrow
               </button>
               <button
-                onClick={() => toast.success("Return request submitted")}
+                onClick={() => navigate("/borrow", { state: { tab: "return" } })}
                 className="btn btn-outline text-sm"
               >
                 <CheckCircle className="h-4 w-4" /> Return
               </button>
               <button
-                onClick={() => toast.success("Reservation confirmed")}
-                className="btn btn-outline text-sm"
-              >
-                <Calendar className="h-4 w-4" /> Reserve
-              </button>
-              <button
-                onClick={() => toast.success("Damage report submitted")}
+                onClick={() => setShowReport(true)}
                 className="btn btn-outline text-sm text-red-600 hover:bg-red-50"
               >
                 <AlertTriangle className="h-4 w-4" /> Report Issue
@@ -759,6 +748,7 @@ export default function ItemDetail() {
           </motion.div>
         )}
       </div>
+      <ReportIssueDialog item={item} open={showReport} onClose={() => setShowReport(false)} />
     </PageTransition>
   );
 }

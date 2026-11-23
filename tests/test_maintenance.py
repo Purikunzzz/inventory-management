@@ -106,3 +106,33 @@ def test_soft_delete(client, auth_header, record, db):
     assert client.get(f"{URL}/{record['id']}", headers=auth_header).status_code == 404
     row = db.get(MaintenanceRecord, record["id"])
     assert row is not None and row.is_active is False
+
+
+def test_user_can_report_issue(client, user_auth_header, item):
+    """Report Issue: any user opens a scheduled repair for today, tagged with the reporter."""
+    resp = client.post(
+        "/api/maintenance/report",
+        json={"item_id": item["id"], "notes": "  Screen flickers  "},
+        headers=user_auth_header,
+    )
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["type"] == "repair"
+    assert data["status"] == "scheduled"
+    assert data["notes"] == "Screen flickers"
+    assert data["reported_by"] == "Test user"
+
+
+def test_admin_created_record_has_no_reporter(record):
+    assert record["reported_by"] is None
+
+
+def test_report_issue_validation(client, user_auth_header, item):
+    empty = client.post(
+        "/api/maintenance/report", json={"item_id": item["id"], "notes": "   "}, headers=user_auth_header
+    )
+    assert empty.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    missing = client.post(
+        "/api/maintenance/report", json={"item_id": 99999, "notes": "broken"}, headers=user_auth_header
+    )
+    assert missing.status_code == status.HTTP_404_NOT_FOUND

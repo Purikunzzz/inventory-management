@@ -4,9 +4,10 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.item import Item
-from app.models.maintenance import MaintenanceRecord, MaintenanceStatus
-from app.models.user import User
-from app.schemas.maintenance import MaintenanceCreate, MaintenanceOut, MaintenanceUpdate
+from app.models.maintenance import MaintenanceRecord, MaintenanceStatus, MaintenanceType
+from app.core.timeutil import local_today
+from app.models.user import User, UserRoleEnum
+from app.schemas.maintenance import IssueReport, MaintenanceCreate, MaintenanceOut, MaintenanceUpdate
 
 _CLOSED = (MaintenanceStatus.completed, MaintenanceStatus.cancelled)
 
@@ -17,13 +18,20 @@ def to_out(record: MaintenanceRecord) -> MaintenanceOut:
     out.item_name = record.item.name if record.item else None
     tech = record.technician
     out.technician_name = (tech.full_name or tech.email) if tech else None
+    creator = record.creator
+    if creator and creator.role != UserRoleEnum.admin:
+        out.reported_by = creator.full_name or creator.email
     return out
 
 
 def _base_query(db: Session):
     return (
         db.query(MaintenanceRecord)
-        .options(joinedload(MaintenanceRecord.item), joinedload(MaintenanceRecord.technician))
+        .options(
+            joinedload(MaintenanceRecord.item),
+            joinedload(MaintenanceRecord.technician),
+            joinedload(MaintenanceRecord.creator),
+        )
         .filter(MaintenanceRecord.is_active.is_(True))
     )
 
@@ -71,6 +79,21 @@ def create_record(db: Session, body: MaintenanceCreate, creator: User) -> Mainte
     _check_item(db, body.item_id)
     _check_technician(db, body.technician_id)
     record = MaintenanceRecord(**body.model_dump(), created_by=creator.id)
+    db.add(record)
+    db.commit()
+    return get_record(db, record.id)
+
+
+def report_issue(db: Session, body: IssueReport, reporter: User) -> MaintenanceRecord:
+    """A user flags a broken item: open a repair job for today for admins to handle."""
+    _check_item(db, body.item_id)
+    record = MaintenanceRecord(
+        item_id=body.item_id,
+        type=MaintenanceType.repair,
+        scheduled_date=local_today(),
+        notes=body.notes,
+        created_by=reporter.id,
+    )
     db.add(record)
     db.commit()
     return get_record(db, record.id)

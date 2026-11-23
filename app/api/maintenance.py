@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, require_admin
 from app.models.maintenance import MaintenanceStatus
 from app.models.user import User
-from app.schemas.maintenance import MaintenanceCreate, MaintenanceOut, MaintenanceUpdate
+from app.schemas.maintenance import IssueReport, MaintenanceCreate, MaintenanceOut, MaintenanceUpdate
 from app.services import maintenance_service
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
@@ -39,6 +39,16 @@ def create_maintenance(
     admin: User = Depends(require_admin),
 ) -> MaintenanceOut:
     return maintenance_service.to_out(maintenance_service.create_record(db, body, admin))
+
+
+@router.post("/report", response_model=MaintenanceOut, status_code=status.HTTP_201_CREATED)
+def report_issue(
+    body: IssueReport,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MaintenanceOut:
+    """Any signed-in user can report a problem; it becomes a scheduled repair."""
+    return maintenance_service.to_out(maintenance_service.report_issue(db, body, user))
 
 
 @router.patch("/{record_id}", response_model=MaintenanceOut, status_code=status.HTTP_200_OK)

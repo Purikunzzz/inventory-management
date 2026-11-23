@@ -51,7 +51,7 @@ core/         → auth, JWT, security helpers
 | `/items` | api/items.py | `get_current_user`; write/delete/`POST /items/{id}/image` → `require_admin` |
 | `/locations` | api/locations.py | `get_current_user`; write/delete → `require_admin` |
 | `/borrow`, `/return`, `/transactions` | api/borrow.py | `get_current_user` |
-| `/maintenance` | api/maintenance.py | `get_current_user`; write/delete → `require_admin` |
+| `/maintenance` | api/maintenance.py | `get_current_user` (incl. `POST /maintenance/report`); write/delete → `require_admin` |
 | `/users` | api/users.py | `PATCH /users/me`, `PATCH /users/me/password` → `get_current_user`; others (incl. `GET /users/me/mfa`, `POST /users/me/mfa/backup-codes`) → `require_admin` |
 | `/stats/*` | api/stats.py | `get_current_user` |
 | `/reports/{type}` | api/reports.py | `get_current_user` |
@@ -123,7 +123,8 @@ MaintenanceStatus: scheduled | in_progress | completed | cancelled  # app/models
 ### maintenance_service
 - `create_record` → 404 if item inactive/missing or technician missing; status starts `scheduled`
 - `update_record` → completed/cancelled are final (409 on status change); `completed` stamps `completed_at`; other fields stay editable
-- `list_records(status_filter, item_id)`; responses include `item_name`, `technician_name`; soft delete
+- `list_records(status_filter, item_id)`; responses include `item_name`, `technician_name`, `reported_by` (creator name when a non-admin made it); soft delete
+- `report_issue` (`POST /maintenance/report` {item_id, notes}, any user) → repair, `scheduled` today; admins get an "Issue reported" header notification
 
 ### stats_service
 - `summary(db)` → total_items, total_users, active_borrows, low_stock_items counts
@@ -195,7 +196,7 @@ src/
                        getLeaderboard(), getRecommendations()
     reportService.js — download(reportType, format, {startDate, endDate}) → blob download
     userService.js   — listUsers(), getUser(), updateMe(), changePassword(), createUser(), updateUser(), deleteUser()
-    maintenanceService.js — listRecords(), getRecord(), createRecord(), updateRecord(), deleteRecord()
+    maintenanceService.js — listRecords(), getRecord(), reportIssue(), createRecord(), updateRecord(), deleteRecord()
   pages/
     Login, Dashboard, Inventory, ItemDetail, BorrowReturn,
     Locations, Analytics, Maintenance, Recommendations, Leaderboard,
@@ -244,7 +245,7 @@ src/
 |------|---------------|-------------|
 | Dashboard | GET /stats/summary, /stats/low-stock, /stats/stock-movement, /transactions | Real API |
 | Inventory | GET /items, POST /items, PATCH /items/{id}, POST /items/{id}/image, DELETE /items/{id} | Real API |
-| ItemDetail | GET /items/{id}, /transactions?item_id=, /maintenance?item_id= | Real API |
+| ItemDetail | GET /items/{id}, /transactions?item_id=, /maintenance?item_id=, POST /maintenance/report (Report Issue) | Real API |
 | Maintenance | GET/POST /maintenance, PATCH/DELETE /maintenance/{id}, GET /items, GET /users (admin) | Real API |
 | Header notifications | GET /transactions, /stats/low-stock, /maintenance (admin) | Real API (read state in localStorage) |
 | BorrowReturn | POST /borrow, POST /return, GET /transactions, GET /items | Real API |

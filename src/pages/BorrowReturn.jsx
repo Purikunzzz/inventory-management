@@ -913,10 +913,11 @@ function OverdueTab({ currentUser, items, transactions }) {
 
 /* --- MAIN PAGE --- */
 export default function BorrowReturn() {
-  const [activeTab, setActiveTab] = useState("borrow");
+  const location = useLocation();
+  // ItemDetail's Return button opens straight on the Return tab.
+  const [activeTab, setActiveTab] = useState(location.state?.tab || "borrow");
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const location = useLocation();
   const preselectedItem = location.state?.selectedItem || null;
 
   const {
