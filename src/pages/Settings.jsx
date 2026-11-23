@@ -33,6 +33,7 @@ import { cn } from "../lib/utils";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../hooks/useTheme";
 import { userService } from "../services/userService";
+import TwoFactorSettings from "../components/TwoFactorSettings";
 
 // ---- Constants ----
 const SETTINGS_TABS = [
@@ -666,6 +667,8 @@ export default function Settings() {
                     </button>
                   </form>
                 </div>
+
+                {currentUser?.role === "admin" && <TwoFactorSettings />}
 
                 {/* Active Session */}
                 <div className="card p-6 space-y-4">

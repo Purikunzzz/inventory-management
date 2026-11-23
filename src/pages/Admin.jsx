@@ -42,6 +42,7 @@ import { userService } from "../services/userService";
 import { itemService } from "../services/itemService";
 import { borrowService } from "../services/borrowService";
 import AddItemModal from "../components/AddItemModal";
+import { useAuth } from "../hooks/useAuth";
 
 // ---- Constants ----
 
@@ -137,6 +138,7 @@ function StatCard({ icon: Icon, label, value, sub, colorClass }) {
 // ---- Main Component ----
 export default function Admin() {
   const queryClient = useQueryClient();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [auditCategory, setAuditCategory] = useState("all");
@@ -725,6 +727,8 @@ export default function Admin() {
                                     >
                                       <Edit className="h-4 w-4" />
                                     </button>
+                                    {/* The API refuses self-deactivation (lockout guard), so don't offer it. */}
+                                    {user.id !== currentUser?.id && (
                                     <button
                                       onClick={() => handleDisableUser(user)}
                                       className="btn btn-ghost p-2 min-h-0 rounded-lg text-red-500 hover:bg-red-50"
@@ -740,6 +744,7 @@ export default function Admin() {
                                         <UserCheck className="h-4 w-4" />
                                       )}
                                     </button>
+                                    )}
                                   </div>
                                 </td>
                               </motion.tr>
@@ -1073,6 +1078,12 @@ export default function Admin() {
                     name="role"
                     className="input"
                     defaultValue={editingUser.role}
+                    disabled={editingUser.id === currentUser?.id}
+                    title={
+                      editingUser.id === currentUser?.id
+                        ? "You cannot change your own role"
+                        : undefined
+                    }
                   >
                     <option value="user">User</option>
                     <option value="admin">Admin</option>

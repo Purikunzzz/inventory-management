@@ -5,7 +5,8 @@ from app.config import settings
 from app.core.google_auth import verify_google_token
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User, UserRoleEnum, detect_department
-from app.schemas.user import ChangePassword, CreateUser, LoginRequest, LoginResponse, UpdateUser, UserOut
+from app.services import mfa_service
+from app.schemas.user import ChangePassword, CreateUser, LoginRequest, LoginResponse, UpdateUser
 
 
 def _verify_credentials(db: Session, email: str, password: str) -> User:
@@ -32,14 +33,17 @@ def _verify_credentials(db: Session, email: str, password: str) -> User:
 
 def authenticate(db: Session, body: LoginRequest) -> LoginResponse:
     user = _verify_credentials(db, body.email, body.password)
-    token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-    return LoginResponse(
-        access_token=token, token_type="bearer", user=UserOut.model_validate(user)
-    )
+    return mfa_service.login_response(db, user)
 
 
 def authenticate_form(db: Session, username: str, password: str) -> dict:
     user = _verify_credentials(db, username, password)
+    if user.role == UserRoleEnum.admin:
+        # The OAuth2 password form has no step for a 2FA code.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins must sign in through the app (two-factor required)",
+        )
     token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
     return {"access_token": token, "token_type": "bearer"}
 
@@ -77,10 +81,7 @@ def authenticate_google(db: Session, credential: str) -> LoginResponse:
             user.role = UserRoleEnum.admin
             db.commit()
 
-    token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-    return LoginResponse(
-        access_token=token, token_type="bearer", user=UserOut.model_validate(user)
-    )
+    return mfa_service.login_response(db, user)
 
 
 def create_user(db: Session, body: CreateUser) -> User:
@@ -119,9 +120,31 @@ def get_user(db: Session, user_id: int) -> User:
     return user
 
 
-def update_user(db: Session, user_id: int, body: UpdateUser) -> User:
+def _guard_self_lockout(actor_id: int | None, user_id: int, data: dict) -> None:
+    """Stop an admin from demoting or deactivating their own account.
+
+    Otherwise the last admin can lock everyone out of the admin console.
+    """
+    if actor_id is None or actor_id != user_id:
+        return
+    if data.get("role") not in (None, UserRoleEnum.admin, UserRoleEnum.admin.value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot remove your own admin role",
+        )
+    if data.get("is_active") is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account",
+        )
+
+
+def update_user(
+    db: Session, user_id: int, body: UpdateUser, actor_id: int | None = None
+) -> User:
     user = get_user(db, user_id)
     data = body.model_dump(exclude_unset=True)
+    _guard_self_lockout(actor_id, user_id, data)
 
     # Check email uniqueness if it's being changed.
     if "email" in data and data["email"] != user.email:
@@ -162,8 +185,13 @@ def change_password(db: Session, user: User, body: ChangePassword) -> User:
     return user
 
 
-def soft_delete_user(db: Session, user_id: int) -> None:
+def soft_delete_user(db: Session, user_id: int, actor_id: int | None = None) -> None:
     """Deactivate user — set is_active=False, never hard delete."""
     user = get_user(db, user_id)
+    if actor_id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
     user.is_active = False
     db.commit()

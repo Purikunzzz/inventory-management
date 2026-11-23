@@ -2,6 +2,8 @@
 
 from fastapi import status
 
+from app.models.user import UserRoleEnum
+
 
 class TestUsersCRUD:
     def test_create_user(self, client, auth_header):
@@ -178,3 +180,44 @@ class TestChangeOwnPassword:
         resp = client.patch("/api/users/me", json={"full_name": None}, headers=user_auth_header)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()["full_name"] == "Test user"
+
+
+class TestAdminSelfLockout:
+    """An admin must not be able to lock themselves out of the admin console."""
+
+    def test_admin_cannot_demote_self(self, client, auth_header, admin_user):
+        resp = client.patch(
+            f"/api/users/{admin_user.id}", json={"role": "user"}, headers=auth_header
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "admin role" in resp.json()["detail"]
+
+    def test_admin_cannot_deactivate_self(self, client, auth_header, admin_user):
+        resp = client.patch(
+            f"/api/users/{admin_user.id}", json={"is_active": False}, headers=auth_header
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_admin_cannot_delete_self(self, client, auth_header, admin_user):
+        resp = client.delete(f"/api/users/{admin_user.id}", headers=auth_header)
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        still = client.get(f"/api/users/{admin_user.id}", headers=auth_header)
+        assert still.json()["is_active"] is True
+
+    def test_admin_can_still_edit_own_name_and_keep_role(self, client, auth_header, admin_user):
+        resp = client.patch(
+            f"/api/users/{admin_user.id}",
+            json={"full_name": "New Name", "role": "admin", "is_active": True},
+            headers=auth_header,
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["full_name"] == "New Name"
+
+    def test_admin_can_demote_other_user(self, client, auth_header, db):
+        from tests.conftest import _create_user
+        other = _create_user(db, "other-admin@test.com", role=UserRoleEnum.admin)
+        resp = client.patch(
+            f"/api/users/{other.id}", json={"role": "user"}, headers=auth_header
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["role"] == "user"

@@ -3,7 +3,7 @@
 ## Stack
 - **Backend**: FastAPI + SQLAlchemy ORM + PostgreSQL (Pydantic v2, python-jose JWT, bcrypt, google-auth)
 - **Frontend**: React 19 + Vite + TailwindCSS + TanStack Query + React Router v6 + Recharts + Sonner + Framer Motion
-- **Auth**: Google OAuth (`@kmitl.ac.th` only) + email/password; JWT HS256, 24h expiry
+- **Auth**: Google OAuth (`@kmitl.ac.th` only) + email/password; JWT HS256, 24h expiry; admins also need TOTP 2FA
 - **Dev**: `docker compose up -d` (postgres:16 + backend on :8000); frontend `npm run dev` (:5173)
 - **Deploy**: Render (backend Dockerfile, inject env vars); Vercel (frontend)
 
@@ -47,12 +47,12 @@ core/         → auth, JWT, security helpers
 ## API — base `/api/`
 | Prefix | File | Auth guard |
 |--------|------|-----------|
-| `/auth` | api/auth.py | public |
+| `/auth` | api/auth.py | public (`/auth/mfa/*` need the 5-min `mfa_token` from login) |
 | `/items` | api/items.py | `get_current_user`; write/delete/`POST /items/{id}/image` → `require_admin` |
 | `/locations` | api/locations.py | `get_current_user`; write/delete → `require_admin` |
 | `/borrow`, `/return`, `/transactions` | api/borrow.py | `get_current_user` |
 | `/maintenance` | api/maintenance.py | `get_current_user`; write/delete → `require_admin` |
-| `/users` | api/users.py | `PATCH /users/me`, `PATCH /users/me/password` → `get_current_user`; others → `require_admin` |
+| `/users` | api/users.py | `PATCH /users/me`, `PATCH /users/me/password` → `get_current_user`; others (incl. `GET /users/me/mfa`, `POST /users/me/mfa/backup-codes`) → `require_admin` |
 | `/stats/*` | api/stats.py | `get_current_user` |
 | `/reports/{type}` | api/reports.py | `get_current_user` |
 
@@ -82,6 +82,10 @@ Pagination: `?skip=0&limit=100`.
 `id PK | item_id FK idx | type Enum(repair,calibration,replacement,inspection) | status Enum(scheduled,in_progress,completed,cancelled) idx | scheduled_date Date | completed_at NULL | next_due Date NULL | cost Numeric(10,2) THB default 0 | notes NULL | technician_id FK users NULL | created_by FK users | is_active default True | created_at | updated_at`
 - New table → `create_all` creates it on startup (no manual ALTER needed)
 
+### admin_mfa
+`user_id PK FK users | secret (base32 TOTP) | enabled Bool | last_used_step NULL (replay guard) | backup_code_hashes Text JSON [sha256] | failed_attempts | locked_until NULL | created_at | updated_at`
+- Separate table so `create_all` adds it (no ALTER). Lost phone + no backup codes → `UPDATE admin_mfa SET enabled=false WHERE user_id=…` (admin re-enrolls on next sign-in)
+
 ### Enums
 ```python
 UserRoleEnum: admin | user        # app/models/user.py
@@ -97,6 +101,13 @@ MaintenanceStatus: scheduled | in_progress | completed | cancelled  # app/models
 - `create_user` hashes password with bcrypt, auto-detects department
 - `update_user` checks email uniqueness, re-hashes password if changed
 - `soft_delete_user` → `is_active=False`
+
+### mfa_service (admin 2FA, TOTP in `core/totp.py`, stdlib only)
+- `login_response(db, user)` → non-admin: session token. Admin: `mfa_required=true`, `mfa_setup_required`, `mfa_token` (5 min, `purpose:"mfa"`), no access token
+- `POST /auth/mfa/setup` → secret + otpauth URI (409 if enabled); `/enable` {code} → turns on, returns session + 10 backup codes (shown once); `/verify` {code} → TOTP or backup code → session
+- Session tokens carry `mfa: true`; `get_current_user` 401s admin tokens without it and any `purpose:"mfa"` token
+- Wrong code → 400 (not 401); 5 wrong in a row → 429 for 5 min; a TOTP step can't be reused
+- `/auth/token` (Swagger form) refuses admins (403) — no step for the code
 
 ### borrow_service
 - `borrow_item` → 404 if item not found/inactive, 409 if `available_quantity < qty`. Admins: decrement qty, status `borrowed`. Users: status `pending`, stock NOT held
@@ -134,7 +145,7 @@ MaintenanceStatus: scheduled | in_progress | completed | cancelled  # app/models
 - Render prod → use Render web shell or psql to `ALTER TABLE`
 
 ## Security
-- JWT: HS256, `SECRET_KEY` from env, 24h expiry; payload: `{sub: user_id, role, exp}`
+- JWT: HS256, `SECRET_KEY` from env, 24h expiry; payload: `{sub: user_id, role, mfa, exp}`
 - `decode_token` in `core/security.py`; `get_current_user` in `api/deps.py` resolves JWT→User row
 - `require_admin` guard checks `role == admin`
 - Google token verified via `google.oauth2.id_token.verify_oauth2_token`; issuer + domain checked
@@ -176,7 +187,7 @@ src/
     useAuth.jsx      — AuthContext; stores token+user in localStorage("lab_token","lab_currentUser")
     useNotifications.js — Header bell: derived from /transactions (+ low-stock, overdue maintenance for admins); polls 60s
   services/
-    authService.js   — googleLogin(), emailLogin()
+    authService.js   — googleLogin(), emailLogin(), mfaSetup(), mfaEnable(), mfaVerify()
     itemService.js   — listItems(), getItem(), createItem(), updateItem(), deleteItem(), uploadImage()
     borrowService.js — borrow(), returnItem(), listTransactions()
     locationService.js — listLocations(), createLocation(), updateLocation(), deleteLocation()
@@ -192,13 +203,15 @@ src/
   components/
     Sidebar, Header, CommandPalette, PageTransition, AddItemModal, EditItemModal,
     ItemImageInput (upload-or-link photo picker used by both modals)
+    TwoFactorStep (admin 2FA on Login: QR setup / code / backup codes), TwoFactorSettings (Settings → Security, admins)
     ui/index.jsx — Skeleton, EmptyState, ErrorState, ConfirmDialog, StatCard, Badge, TableSkeleton
   layouts/
     AuthLayout, DashboardLayout
 ```
 
 ## Data flow rules
-- `useAuth` → provides `currentUser`, `login(credential)`, `emailLogin(email,pw)`, `logout`, `isAuthenticated`
+- `useAuth` → provides `currentUser`, `login(credential)`, `emailLogin(email,pw)`, `completeLogin(data)`, `logout`, `isAuthenticated`
+- `login`/`emailLogin` return the 2FA challenge (nothing stored) for admins, else `null`; Login shows `TwoFactorStep`, then `completeLogin`
 - All API calls via `apiClient.{get,post,patch,delete}(endpoint)` → auto-injects Bearer token
 - TanStack Query for server state: `staleTime: 5min, retry: 1`
 - Protected routes check `isAuthenticated`; redirect to `/login` if false
@@ -241,7 +254,8 @@ src/
 | **Leaderboard** | **GET /stats/leaderboard** | **Real API** |
 | **Recommendations** | **GET /stats/recommendations** | **Real API** |
 | **Settings → Profile** | **PATCH /users/me** | **Real API** |
-| **Settings → Security** | **PATCH /users/me/password** | **Real API** |
+| **Settings → Security** | **PATCH /users/me/password**; admins: GET /users/me/mfa, POST /users/me/mfa/backup-codes | **Real API** |
+| Login | POST /auth/google, /auth/mfa/setup, /auth/mfa/enable, /auth/mfa/verify | Real API |
 | Settings → Notifications | — | localStorage only |
 | Settings → Appearance | — | localStorage only |
 

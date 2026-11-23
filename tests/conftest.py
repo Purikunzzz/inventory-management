@@ -101,7 +101,9 @@ def _create_user(
 
 
 def _token_for(user: User) -> str:
-    return create_access_token(data={"sub": str(user.id), "role": user.role.value})
+    # Admin tokens must carry `mfa: true` (issued after 2FA), like real sign-ins.
+    mfa = user.role == UserRoleEnum.admin
+    return create_access_token(data={"sub": str(user.id), "role": user.role.value, "mfa": mfa})
 
 
 @pytest.fixture

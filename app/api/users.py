@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_or_admin, get_db, get_current_user, require_admin
 from app.models.user import User, UserRoleEnum
 from app.schemas.user import ChangePassword, CreateUser, UpdateUser, UserOut
-from app.services import auth_service
+from app.schemas.mfa import BackupCodesOut, MfaConfirmIn, MfaStatusOut
+from app.services import auth_service, mfa_service
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -32,6 +33,24 @@ def change_my_password(
 ) -> UserOut:
     user = auth_service.change_password(db, current, body)
     return UserOut.model_validate(user)
+
+
+@router.get("/me/mfa", response_model=MfaStatusOut, status_code=status.HTTP_200_OK)
+def my_mfa_status(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> MfaStatusOut:
+    return mfa_service.get_status(db, admin)
+
+
+@router.post("/me/mfa/backup-codes", response_model=BackupCodesOut, status_code=status.HTTP_200_OK)
+def regenerate_my_backup_codes(
+    body: MfaConfirmIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> BackupCodesOut:
+    """Replace all backup codes (old ones stop working). Needs an authenticator code."""
+    return mfa_service.regenerate_backup_codes(db, admin, body.code)
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -72,9 +91,9 @@ def update_user(
     user_id: int,
     body: UpdateUser,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> UserOut:
-    user = auth_service.update_user(db, user_id, body)
+    user = auth_service.update_user(db, user_id, body, actor_id=admin.id)
     return UserOut.model_validate(user)
 
 
@@ -82,7 +101,7 @@ def update_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> Response:
-    auth_service.soft_delete_user(db, user_id)
+    auth_service.soft_delete_user(db, user_id, actor_id=admin.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

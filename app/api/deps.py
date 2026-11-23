@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.core.security import decode_token
+from app.core.security import MFA_PURPOSE, decode_token
 from app.models.user import User, UserRoleEnum
 
 
@@ -27,6 +27,8 @@ def get_current_user(
 ) -> User:
     """Resolve the JWT to a live User row; reject if token is invalid/disabled."""
     payload = decode_token(token)
+    if payload.get("purpose") == MFA_PURPOSE:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -39,6 +41,12 @@ def get_current_user(
     user = db.query(User).filter(User.id == uid).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or disabled")
+    # Admin power needs a token issued after 2FA. Catches tokens from before 2FA
+    # existed and users promoted mid-session: they must sign in again.
+    if user.role == UserRoleEnum.admin and not payload.get("mfa"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor sign-in required"
+        )
     return user
 
 
