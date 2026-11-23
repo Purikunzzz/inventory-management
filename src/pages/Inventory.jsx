@@ -11,7 +11,6 @@ import {
   Download,
   Upload,
   Heart,
-  QrCode,
   ChevronLeft,
   ChevronRight,
   X,
@@ -81,7 +80,7 @@ export default function Inventory() {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   // Distinct query key from the plain `["items"]` used elsewhere (BorrowReturn,
-  // QrScanner, Analytics) — this fetch includes retired items so the Status
+  // Analytics) — this fetch includes retired items so the Status
   // filter's "Retired" option actually works, and those other pages must NOT
   // share that cached (superset) result since they expect active-only data.
   const {
@@ -129,7 +128,6 @@ export default function Inventory() {
         quantity: item.total_quantity,
         availableQuantity: item.available_quantity,
         image: item.image_url || getPlaceholderImage(item),
-        qrCode: `QR-${item.id}`,
         value: 0,
         borrowCount: 0,
         brand: "",
@@ -178,7 +176,6 @@ export default function Inventory() {
           item.name.toLowerCase().includes(q) ||
           (item.category || "").toLowerCase().includes(q) ||
           (locationMap[item.locationId] || "").toLowerCase().includes(q) ||
-          item.qrCode.toLowerCase().includes(q) ||
           (item.tags || []).some((t) => t.toLowerCase().includes(q)),
       );
     }
@@ -702,7 +699,7 @@ export default function Inventory() {
                       </div>
                       <div className="flex items-center justify-between pt-2 border-t border-gray-50">
                         <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <QrCode className="h-3 w-3" /> {item.qrCode}
+                          #{item.id}
                         </span>
                         <div className="flex items-center gap-1.5">
                           {isAdmin && (

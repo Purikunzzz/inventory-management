@@ -5,8 +5,6 @@ import {
   ArrowLeft,
   Heart,
   Share2,
-  QrCode,
-  Printer,
   Wrench,
   AlertTriangle,
   Package,
@@ -20,7 +18,6 @@ import {
   ChevronRight,
   ArrowLeftRight,
   Shield,
-  Download,
   Play,
   Pause,
   ExternalLink,
@@ -78,7 +75,6 @@ function enrichItem(apiItem) {
     availableQuantity: apiItem.available_quantity,
     image: apiItem.image_url || getPlaceholderImage(apiItem),
     images: apiItem.image_url ? [apiItem.image_url] : null,
-    qrCode: `QR-${apiItem.id}`,
     value: 0,
     borrowCount: 0,
     brand: "",
@@ -480,12 +476,6 @@ export default function ItemDetail() {
               >
                 <Wrench className="h-4 w-4" /> Maintenance
               </button>
-              <button
-                onClick={() => toast.success("QR code ready to print")}
-                className="btn btn-outline text-sm"
-              >
-                <Printer className="h-4 w-4" /> Print QR
-              </button>
             </div>
           </motion.div>
         </div>
@@ -513,37 +503,6 @@ export default function ItemDetail() {
             )}
           </motion.div>
 
-          {/* QR Code */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="card text-center"
-          >
-            <h3 className="font-semibold text-gray-900 mb-4">QR Code</h3>
-            <div className="w-40 h-40 mx-auto bg-white rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center mb-3">
-              <div className="text-center">
-                <QrCode className="h-20 w-20 text-gray-800 mx-auto" />
-              </div>
-            </div>
-            <p className="text-xs font-mono text-gray-500 mb-3">
-              {item.qrCode}
-            </p>
-            <div className="flex justify-center gap-2">
-              <button
-                onClick={() => toast.success("QR code downloaded")}
-                className="btn btn-outline text-xs px-3 py-1.5"
-              >
-                <Download className="h-3 w-3" /> Download
-              </button>
-              <button
-                onClick={() => toast.success("Ready to print")}
-                className="btn btn-outline text-xs px-3 py-1.5"
-              >
-                <Printer className="h-3 w-3" /> Print
-              </button>
-            </div>
-          </motion.div>
         </div>
 
         {/* Specifications */}

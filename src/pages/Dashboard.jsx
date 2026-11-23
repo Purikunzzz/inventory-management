@@ -7,7 +7,6 @@ import {
   ArrowLeftRight,
   Wrench,
   Plus,
-  QrCode,
   Search,
   AlertTriangle,
   Clock,
@@ -119,12 +118,6 @@ const actionButtons = [
     label: "Borrow Item",
     href: "/borrow",
     color: "bg-primary-500 hover:bg-primary-600 text-white",
-  },
-  {
-    icon: QrCode,
-    label: "Scan QR",
-    href: "/qr-scanner",
-    color: "bg-secondary-300 hover:bg-secondary-400 text-gray-800",
   },
   {
     icon: Search,

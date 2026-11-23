@@ -1,12 +1,10 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
   Users as UsersIcon,
   ScrollText,
-  QrCode as QrCodeIcon,
   Package,
   ArrowLeftRight,
   CheckCircle,
@@ -18,7 +16,6 @@ import {
   Edit,
   Eye,
   Download,
-  Printer,
   Plus,
   Search,
   Filter,
@@ -57,7 +54,6 @@ const ADMIN_TABS = [
   { id: "approvals", label: "Approvals", icon: ClipboardCheck },
   { id: "users", label: "Users", icon: UsersIcon },
   { id: "audit", label: "Audit Logs", icon: ScrollText },
-  { id: "qr", label: "QR Generator", icon: QrCodeIcon },
 ];
 
 const QUICK_ACTIONS = [
@@ -72,12 +68,6 @@ const QUICK_ACTIONS = [
     label: "Add User",
     icon: UserCheck,
     color: "bg-blue-50 text-blue-600",
-  },
-  {
-    id: "scan-qr",
-    label: "Scan QR",
-    icon: QrCodeIcon,
-    color: "bg-amber-50 text-amber-600",
   },
   {
     id: "backup",
@@ -144,91 +134,13 @@ function StatCard({ icon: Icon, label, value, sub, colorClass }) {
   );
 }
 
-// ---- QR Pattern Generator ----
-function QRPattern({ code }) {
-  // Generate a pseudo QR-like grid pattern based on the code
-  const size = 21;
-  const cells = useMemo(() => {
-    const grid = Array.from({ length: size }, () =>
-      Array.from({ length: size }, () => false),
-    );
-    // Generate a seeded pattern based on code string
-    let hash = 0;
-    for (let i = 0; i < (code || "LABFLOW").length; i++) {
-      hash = (hash << 5) - hash + (code || "LABFLOW").charCodeAt(i);
-      hash |= 0;
-    }
-    const seed = Math.abs(hash);
-    // Finders (top-left, top-right, bottom-left)
-    const drawFinder = (r, c) => {
-      for (let i = 0; i < 7; i++) {
-        for (let j = 0; j < 7; j++) {
-          const rr = r + i;
-          const cc = c + j;
-          if (rr < size && cc < size) {
-            grid[rr][cc] =
-              i === 0 ||
-              i === 6 ||
-              j === 0 ||
-              j === 6 ||
-              (i >= 2 && i <= 4 && j >= 2 && j <= 4);
-          }
-        }
-      }
-    };
-    drawFinder(0, 0);
-    drawFinder(0, size - 7);
-    drawFinder(size - 7, 0);
-    // Fill remaining with seeded pattern
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        if (grid[r][c]) continue;
-        const val = (seed * (r * size + c + 1)) % 1000 > 500;
-        grid[r][c] = val;
-      }
-    }
-    return grid;
-  }, [code]);
-
-  return (
-    <div className="flex items-center justify-center p-6">
-      <div className="bg-white p-6 rounded-xl shadow-inner border-2 border-gray-200">
-        <div
-          className="grid border-4 border-gray-900 rounded-sm overflow-hidden"
-          style={{
-            gridTemplateColumns: `repeat(${size}, 1fr)`,
-            width: `${Math.min(280, size * 13)}px`,
-            height: `${Math.min(280, size * 13)}px`,
-          }}
-        >
-          {cells.map((row, r) =>
-            row.map((cell, c) => (
-              <div
-                key={`${r}-${c}`}
-                className={cn(
-                  "aspect-square",
-                  cell ? "bg-gray-900" : "bg-white",
-                )}
-              />
-            )),
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ---- Main Component ----
 export default function Admin() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [auditCategory, setAuditCategory] = useState("all");
   const [auditSearch, setAuditSearch] = useState("");
-  const [qrCode, setQrCode] = useState("");
-  const [qrGenerated, setQrGenerated] = useState("");
-  const [qrLoading, setQrLoading] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [userStatusFilter, setUserStatusFilter] = useState("all");
   const [editingUser, setEditingUser] = useState(null);
@@ -472,32 +384,6 @@ export default function Admin() {
     createUserMutation.mutate(data);
   };
 
-  const handleGenerateQR = async () => {
-    if (!qrCode.trim()) {
-      toast.error("Please enter an item code");
-      return;
-    }
-    setQrLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setQrGenerated(qrCode);
-    setQrLoading(false);
-    toast.success("QR code generated successfully", {
-      description: `QR code for ${qrCode} is ready`,
-    });
-  };
-
-  const handleDownloadQR = () => {
-    toast.success("QR code downloaded as PNG", {
-      description: `QR-${qrGenerated}.png saved to downloads`,
-    });
-  };
-
-  const handlePrintQR = () => {
-    toast.success("QR code sent to printer", {
-      description: "Print job has been queued",
-    });
-  };
-
   const computedStats = useMemo(
     () => ({
       totalItems: summary?.total_items || 0,
@@ -640,7 +526,7 @@ export default function Admin() {
                   <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
                     Quick Actions
                   </h2>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                     {QUICK_ACTIONS.map((action) => (
                       <button
                         key={action.id}
@@ -649,8 +535,6 @@ export default function Admin() {
                             setShowAddItem(true);
                           else if (action.id === "add-user")
                             setShowAddUser(true);
-                          else if (action.id === "scan-qr")
-                            navigate("/qr-scanner");
                           else if (action.id === "backup")
                             toast.info("Backup export is not available yet");
                         }}
@@ -1120,113 +1004,6 @@ export default function Admin() {
               </motion.div>
             )}
 
-            {/* QR Generator Tab */}
-            {activeTab === "qr" && (
-              <motion.div
-                key="qr"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                className="space-y-6"
-              >
-                {/* Input */}
-                <div className="card p-5">
-                  <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
-                    Generate QR Code
-                  </h2>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1">
-                      <label className="label" htmlFor="qr-input">
-                        Item Code or ID
-                      </label>
-                      <input
-                        id="qr-input"
-                        type="text"
-                        placeholder="e.g., ITEM-122 or QR-ITEM-122"
-                        value={qrCode}
-                        onChange={(e) => setQrCode(e.target.value)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && handleGenerateQR()
-                        }
-                        className="input"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        onClick={handleGenerateQR}
-                        disabled={qrLoading}
-                        className="btn btn-primary w-full sm:w-auto"
-                      >
-                        {qrLoading ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                            Generating...
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-2">
-                            <QrCodeIcon className="h-4 w-4" />
-                            Generate QR
-                          </span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* QR Display */}
-                {qrGenerated ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="card p-5"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
-                        QR Code: {qrGenerated}
-                      </h2>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleDownloadQR}
-                          className="btn btn-outline min-h-0 py-2 px-3 text-sm"
-                        >
-                          <Download className="h-4 w-4" />
-                          Download
-                        </button>
-                        <button
-                          onClick={handlePrintQR}
-                          className="btn btn-primary min-h-0 py-2 px-3 text-sm"
-                        >
-                          <Printer className="h-4 w-4" />
-                          Print
-                        </button>
-                      </div>
-                    </div>
-                    <QRPattern code={qrGenerated} />
-                    <p className="text-center text-xs text-gray-400 mt-3">
-                      QR-{qrGenerated} &middot; Generated{" "}
-                      {new Date().toLocaleString()}
-                    </p>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="card flex flex-col items-center justify-center py-16 px-4"
-                  >
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 mb-4">
-                      <QrCodeIcon className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-1">
-                      No QR code generated
-                    </h3>
-                    <p className="text-xs text-gray-500 text-center max-w-xs">
-                      Enter an item code above and click "Generate QR" to create
-                      a QR code
-                    </p>
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
       </div>

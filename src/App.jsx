@@ -7,7 +7,6 @@ import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
 import ItemDetail from "./pages/ItemDetail";
 import BorrowReturn from "./pages/BorrowReturn";
-import QrScanner from "./pages/QrScanner";
 import Locations from "./pages/Locations";
 import Analytics from "./pages/Analytics";
 import Maintenance from "./pages/Maintenance";
@@ -76,7 +75,6 @@ export default function App() {
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/inventory/:id" element={<ItemDetail />} />
         <Route path="/borrow" element={<BorrowReturn />} />
-        <Route path="/qr-scanner" element={<QrScanner />} />
         <Route path="/locations" element={<Locations />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/maintenance" element={<Maintenance />} />

@@ -18,7 +18,6 @@ import {
   FileText,
   Camera,
   Upload,
-  QrCode,
   Trash2,
   Download,
   Filter,

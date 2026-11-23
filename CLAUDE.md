@@ -197,7 +197,7 @@ src/
     userService.js   — listUsers(), getUser(), updateMe(), changePassword(), createUser(), updateUser(), deleteUser()
     maintenanceService.js — listRecords(), getRecord(), createRecord(), updateRecord(), deleteRecord()
   pages/
-    Login, Dashboard, Inventory, ItemDetail, BorrowReturn, QrScanner,
+    Login, Dashboard, Inventory, ItemDetail, BorrowReturn,
     Locations, Analytics, Maintenance, Recommendations, Leaderboard,
     Reports, Admin, Settings
   components/
@@ -237,7 +237,7 @@ src/
 | `lab_notifications_read` | IDs of header notifications marked read (no backend) |
 
 ## Routes
-`/ → Dashboard | /inventory → Inventory | /inventory/:id → ItemDetail | /borrow → BorrowReturn | /qr-scanner | /locations | /analytics | /maintenance | /recommendations | /leaderboard | /reports | /admin (admin only) | /settings`
+`/ → Dashboard | /inventory → Inventory | /inventory/:id → ItemDetail | /borrow → BorrowReturn | /locations | /analytics | /maintenance | /recommendations | /leaderboard | /reports | /admin (admin only) | /settings`
 
 ## What pages use (page → real API endpoints)
 | Page | Endpoints used | Data source |
@@ -251,7 +251,6 @@ src/
 | Locations | GET /locations, POST /locations, PATCH, DELETE | Real API |
 | Analytics | GET /stats/summary, /stats/item-usage, /stats/stock-movement, /stats/low-stock | Real API |
 | Admin | GET /users, POST /users, PATCH /users/{id}, DELETE /users/{id} | Real API |
-| QrScanner | GET /items/{id} | Real API |
 | **Leaderboard** | **GET /stats/leaderboard** | **Real API** |
 | **Recommendations** | **GET /stats/recommendations** | **Real API** |
 | **Settings → Profile** | **PATCH /users/me** | **Real API** |

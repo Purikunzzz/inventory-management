@@ -29,7 +29,7 @@ renders. Unrecognized/custom categories get a color deterministically
 hashed from the label instead of a fixed swatch.
 
 Every page that renders item images (`Inventory`, `ItemDetail`, `Locations`,
-`BorrowReturn`, `QrScanner`, `Dashboard`, and the
+`BorrowReturn`, `Dashboard`, and the
 `Maintenance`/`Reports` pages) uses `item.image_url || getPlaceholderImage(item)`.
 
 **To add a real equipment photo:** in the Add/Edit item dialog, either
