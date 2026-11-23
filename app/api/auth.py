@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.rate_limit import _rate_limit
+from app.schemas.mfa import MfaCodeIn, MfaEnableOut, MfaSetupOut, MfaTokenIn
 from app.schemas.user import GoogleLoginRequest, LoginRequest, LoginResponse, Token
-from app.services import auth_service
+from app.services import auth_service, mfa_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,3 +43,36 @@ def login_oauth_form(
     _rate_limit(request)
     result = auth_service.authenticate_form(db, form.username, form.password)
     return Token(**result)
+
+
+@router.post("/mfa/setup", response_model=MfaSetupOut, status_code=status.HTTP_200_OK)
+def mfa_setup(
+    body: MfaTokenIn,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> MfaSetupOut:
+    """Admin first sign-in: get a secret + otpauth URI to scan into an authenticator app."""
+    _rate_limit(request)
+    return mfa_service.start_setup(db, body.mfa_token)
+
+
+@router.post("/mfa/enable", response_model=MfaEnableOut, status_code=status.HTTP_200_OK)
+def mfa_enable(
+    body: MfaCodeIn,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> MfaEnableOut:
+    """Confirm the first authenticator code; returns a session and one-time backup codes."""
+    _rate_limit(request)
+    return mfa_service.enable(db, body.mfa_token, body.code)
+
+
+@router.post("/mfa/verify", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+def mfa_verify(
+    body: MfaCodeIn,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LoginResponse:
+    """Second sign-in step for admins: authenticator code or a backup code."""
+    _rate_limit(request)
+    return mfa_service.verify(db, body.mfa_token, body.code)

@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { GoogleLogin } from "@react-oauth/google";
 import { FlaskConical, GraduationCap } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import TwoFactorStep from "../components/TwoFactorStep";
 
 const cardVariants = {
   hidden: { opacity: 0, y: 24, scale: 0.97 },
@@ -18,7 +19,10 @@ const cardVariants = {
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
+  const { login, completeLogin, isAuthenticated } = useAuth();
+  // Admin 2FA challenge from the login response; null = show the Google button.
+  const [challenge, setChallenge] = useState(null);
+  const cancelChallenge = useCallback(() => setChallenge(null), []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -28,7 +32,11 @@ export default function Login() {
 
   async function handleGoogleSuccess(response) {
     try {
-      await login(response.credential);
+      const pending = await login(response.credential);
+      if (pending) {
+        setChallenge(pending);
+        return;
+      }
       toast.success("Signed in successfully");
       navigate("/", { replace: true });
     } catch (err) {
@@ -36,6 +44,12 @@ export default function Login() {
         description: err.message || "Unable to sign in with Google.",
       });
     }
+  }
+
+  function handleTwoFactorDone(data) {
+    completeLogin(data);
+    toast.success("Signed in successfully");
+    navigate("/", { replace: true });
   }
 
   if (isAuthenticated) return null;
@@ -59,6 +73,15 @@ export default function Login() {
         </p>
       </div>
 
+      {challenge ? (
+        <div className="px-8 pb-8">
+          <TwoFactorStep
+            challenge={challenge}
+            onDone={handleTwoFactorDone}
+            onCancel={cancelChallenge}
+          />
+        </div>
+      ) : (
       <div className="px-8 pb-8 flex flex-col items-center gap-4">
         <p className="text-sm text-gray-500 text-center">
           Sign in with your KMITL Google account
@@ -83,6 +106,7 @@ export default function Login() {
           </span>
         </div>
       </div>
+      )}
     </motion.div>
   );
 }

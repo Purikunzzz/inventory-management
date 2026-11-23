@@ -41,9 +41,19 @@ class UserOut(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    access_token: str
+    """Either a session (`access_token`) or, for admins, a 2FA challenge.
+
+    When `mfa_required` is true there is no access token yet: send `mfa_token`
+    plus a code to /auth/mfa/verify (or /auth/mfa/setup + /enable if
+    `mfa_setup_required`).
+    """
+
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     user: UserOut
+    mfa_required: bool = False
+    mfa_setup_required: bool = False
+    mfa_token: Optional[str] = None
 
 
 class Token(BaseModel):

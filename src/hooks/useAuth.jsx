@@ -39,15 +39,21 @@ export function AuthProvider({ children }) {
     setCurrentUser(user);
   }, []);
 
-  const login = useCallback(async (credential) => {
-    const data = await authService.googleLogin(credential);
+  // Admins get a 2FA challenge instead of a session: return it (nothing stored)
+  // so the login page can ask for the code, then call completeLogin().
+  const _startSession = useCallback((data) => {
+    if (data.mfa_required) return data;
     _storeAuth(data);
+    return null;
   }, [_storeAuth]);
 
+  const login = useCallback(async (credential) => {
+    return _startSession(await authService.googleLogin(credential));
+  }, [_startSession]);
+
   const emailLogin = useCallback(async (email, password) => {
-    const data = await authService.emailLogin(email, password);
-    _storeAuth(data);
-  }, [_storeAuth]);
+    return _startSession(await authService.emailLogin(email, password));
+  }, [_startSession]);
 
   const logout = useCallback(() => {
     localStorage.removeItem("lab_token");
@@ -63,6 +69,7 @@ export function AuthProvider({ children }) {
         token,
         login,
         emailLogin,
+        completeLogin: _storeAuth,
         logout,
         isAuthenticated: !!currentUser,
         isLoading,

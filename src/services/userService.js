@@ -27,6 +27,16 @@ export const userService = {
     })
   },
 
+  /** Admin 2FA status: { enabled, backup_codes_remaining }. */
+  getMfaStatus() {
+    return apiClient.get('/users/me/mfa')
+  },
+
+  /** Replace all backup codes; needs a current authenticator code. */
+  regenerateBackupCodes(code) {
+    return apiClient.post('/users/me/mfa/backup-codes', { code })
+  },
+
   createUser(data) {
     return apiClient.post('/users', data)
   },

@@ -5,7 +5,8 @@ from app.config import settings
 from app.core.google_auth import verify_google_token
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User, UserRoleEnum, detect_department
-from app.schemas.user import ChangePassword, CreateUser, LoginRequest, LoginResponse, UpdateUser, UserOut
+from app.services import mfa_service
+from app.schemas.user import ChangePassword, CreateUser, LoginRequest, LoginResponse, UpdateUser
 
 
 def _verify_credentials(db: Session, email: str, password: str) -> User:
@@ -32,14 +33,17 @@ def _verify_credentials(db: Session, email: str, password: str) -> User:
 
 def authenticate(db: Session, body: LoginRequest) -> LoginResponse:
     user = _verify_credentials(db, body.email, body.password)
-    token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-    return LoginResponse(
-        access_token=token, token_type="bearer", user=UserOut.model_validate(user)
-    )
+    return mfa_service.login_response(db, user)
 
 
 def authenticate_form(db: Session, username: str, password: str) -> dict:
     user = _verify_credentials(db, username, password)
+    if user.role == UserRoleEnum.admin:
+        # The OAuth2 password form has no step for a 2FA code.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins must sign in through the app (two-factor required)",
+        )
     token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
     return {"access_token": token, "token_type": "bearer"}
 
@@ -77,10 +81,7 @@ def authenticate_google(db: Session, credential: str) -> LoginResponse:
             user.role = UserRoleEnum.admin
             db.commit()
 
-    token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-    return LoginResponse(
-        access_token=token, token_type="bearer", user=UserOut.model_validate(user)
-    )
+    return mfa_service.login_response(db, user)
 
 
 def create_user(db: Session, body: CreateUser) -> User:
