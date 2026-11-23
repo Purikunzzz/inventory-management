@@ -9,7 +9,8 @@ import { formatRelative, localDateISO } from "../lib/utils";
 /**
  * Header notifications derived from real data (no notifications table):
  *  - everyone: own borrow approved / rejected, own borrows overdue
- *  - admins:   pending borrow requests, low stock, overdue maintenance
+ *  - admins:   pending borrow requests, low stock, overdue maintenance,
+ *              open issues reported by users (Report Issue on ItemDetail)
  * Only the "read" state is local (localStorage `lab_notifications_read`).
  */
 const READ_KEY = "lab_notifications_read";
@@ -71,6 +72,16 @@ function adminNotifications(pending, lowStock, maintenance, itemName, today) {
     });
   }
   for (const m of maintenance) {
+    if (m.status === "scheduled" && m.reported_by) {
+      out.push({
+        id: `issue-${m.id}`,
+        title: "Issue reported",
+        desc: `${m.reported_by}: ${m.item_name || `item #${m.item_id}`} — ${m.notes}`,
+        at: toDate(m.created_at),
+        link: "/maintenance",
+      });
+      continue;
+    }
     if (m.status !== "scheduled" || m.scheduled_date >= today) continue;
     out.push({
       id: `maint-${m.id}`,

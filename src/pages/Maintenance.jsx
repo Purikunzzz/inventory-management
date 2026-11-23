@@ -448,6 +448,13 @@ function DetailModal({ record, isOpen, onClose, isAdmin, onUpdate, onDelete, isS
               </div>
             </div>
 
+            {record.reported_by && (
+              <div className="text-sm">
+                <span className="text-gray-500">Reported by</span>
+                <span className="ml-2 font-medium text-gray-900">{record.reported_by}</span>
+              </div>
+            )}
+
             {record.completed_at && (
               <div className="text-sm">
                 <span className="text-gray-500">Completed</span>
@@ -939,6 +946,11 @@ export default function Maintenance() {
                             {record.technician_name || "Unassigned"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px]">
+                            {record.reported_by && (
+                              <span className="block text-xs font-medium text-red-600">
+                                Reported by {record.reported_by}
+                              </span>
+                            )}
                             {truncate(record.notes || "—", 50)}
                           </td>
                         </motion.tr>

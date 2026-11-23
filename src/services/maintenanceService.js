@@ -13,6 +13,11 @@ export const maintenanceService = {
     return apiClient.get(`/maintenance/${id}`)
   },
 
+  /** Any user: report a problem with an item → scheduled repair job. */
+  reportIssue(itemId, notes) {
+    return apiClient.post('/maintenance/report', { item_id: itemId, notes })
+  },
+
   /** Admin only. */
   createRecord(data) {
     return apiClient.post('/maintenance', data)

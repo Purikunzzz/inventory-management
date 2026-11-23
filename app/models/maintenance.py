@@ -50,3 +50,4 @@ class MaintenanceRecord(Base):
 
     item = relationship("Item")
     technician = relationship("User", foreign_keys=[technician_id])
+    creator = relationship("User", foreign_keys=[created_by])
