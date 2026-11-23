@@ -8,7 +8,6 @@ import {
   MapPin,
   Building2,
   DoorOpen,
-  QrCode,
   Package,
   Layers,
   BarChart3,
@@ -180,14 +179,6 @@ function LocationDetail({ location, items }) {
             <p className="mt-3 text-sm text-gray-500 leading-relaxed">
               {location.description || "No description available."}
             </p>
-          </div>
-
-          {/* QR Code placeholder */}
-          <div className="hidden sm:flex flex-col items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-100 flex-shrink-0">
-            <QrCode className="h-10 w-10 text-gray-300" />
-            <span className="text-[10px] text-gray-400 font-mono">
-              QR-LOC-{location.id}
-            </span>
           </div>
         </div>
       </div>

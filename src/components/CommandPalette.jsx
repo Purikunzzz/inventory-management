@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   Package,
   ArrowLeftRight,
-  QrCode,
   MapPin,
   BarChart3,
   Wrench,
@@ -50,13 +49,6 @@ const commandItems = [
         icon: ArrowLeftRight,
         to: "/borrow",
         shortcut: "G B",
-      },
-      {
-        id: "qr",
-        label: "QR Scanner",
-        icon: QrCode,
-        to: "/qr-scanner",
-        shortcut: "G Q",
       },
       {
         id: "locations",
@@ -132,13 +124,6 @@ const commandItems = [
         icon: MapPin,
         action: "add_location",
         shortcut: "N L",
-      },
-      {
-        id: "scan_qr",
-        label: "Scan QR code",
-        icon: QrCode,
-        action: "scan_qr",
-        shortcut: "N Q",
       },
       {
         id: "add_user",
