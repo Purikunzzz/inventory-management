@@ -2,6 +2,7 @@ from app.models.user import User, UserRoleEnum
 from app.models.location import Location
 from app.models.item import Item
 from app.models.borrow import BorrowRecord, BorrowStatus
+from app.models.mfa import AdminMfa
 from app.models.maintenance import MaintenanceRecord, MaintenanceStatus, MaintenanceType
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "MaintenanceRecord",
     "MaintenanceStatus",
     "MaintenanceType",
+    "AdminMfa",
 ]
