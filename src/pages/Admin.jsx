@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -139,7 +138,6 @@ function StatCard({ icon: Icon, label, value, sub, colorClass }) {
 export default function Admin() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [auditCategory, setAuditCategory] = useState("all");
   const [auditSearch, setAuditSearch] = useState("");
